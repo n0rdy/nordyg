@@ -3,6 +3,9 @@
 #   make archive  build the universal static library core/build/libnordyg.a + header
 #   make smoke    build and run the Swift bridge harness against the archive
 #   make lint     golangci-lint on the core
+#   make app      build the SwiftUI app (Debug, ad-hoc signed)
+#   make run      build and open the app
+#   make xcodeproj regenerate app/Nordyg.xcodeproj from app/project.yml
 #   make clean
 #
 # Go is pinned via GOTOOLCHAIN so the version on PATH does not matter.
@@ -58,14 +61,39 @@ $(APP_HDR): $(BUILD)/libnordyg.h
 
 archive: $(BUILD)/libnordyg.a $(APP_HDR)
 
-$(SMOKE): archive app/smoke/main.swift
+SMOKE_SRC := app/smoke/main.swift app/Nordyg/Core/CoreBridge.swift app/Nordyg/Core/Contract.swift \
+             app/Nordyg/Core/JSONValue.swift app/Nordyg/Core/SystemResolvers.swift
+
+$(SMOKE): archive $(SMOKE_SRC)
 	@mkdir -p app/build
-	swiftc -I app/NordygCore app/smoke/main.swift -L$(BUILD) -lnordyg -lresolv \
-	  -framework CoreFoundation -framework Security -o $@
+	swiftc -parse-as-library -I app/NordygCore $(SMOKE_SRC) -L$(BUILD) -lnordyg -lresolv \
+	  -framework CoreFoundation -framework Security -framework SystemConfiguration -o $@
 	codesign --force --sign - --options runtime $@
 
 smoke: $(SMOKE)
 	$(SMOKE)
+
+# --- SwiftUI app ---------------------------------------------------------------
+
+XCODEPROJ := app/Nordyg.xcodeproj
+DERIVED   := app/build/DerivedData
+APP       := $(DERIVED)/Build/Products/Debug/Nordyg.app
+
+.PHONY: xcodeproj app run
+
+# Regenerate the Xcode project from app/project.yml (needs xcodegen).
+xcodeproj:
+	cd app && xcodegen generate
+
+# Debug build of the app, ad-hoc signed (no team needed).
+app: archive
+	xcodebuild -project $(XCODEPROJ) -scheme Nordyg -configuration Debug \
+	  -derivedDataPath $(DERIVED) CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO build \
+	  | grep -E 'error:|warning: .*\.swift|BUILD' || true
+	@test -d $(APP)
+
+run: app
+	open $(APP)
 
 clean:
 	rm -rf $(BUILD) app/build $(APP_HDR)

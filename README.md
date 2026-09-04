@@ -24,7 +24,10 @@ download toolchains will do.
 make test      # Go tests, no network needed
 make archive   # core/build/libnordyg.a (x86_64 + arm64) and header
 make smoke     # build and run the Swift bridge harness
+make run       # build the app and open it
 ```
+
+Or open `app/Nordyg.xcodeproj` in Xcode after `make archive`.
 
 ## Licence
 

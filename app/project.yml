@@ -1,0 +1,62 @@
+# Source of truth for Nordyg.xcodeproj. Regenerate with `make xcodeproj`
+# (needs xcodegen); the generated project is committed so building from
+# source only needs Xcode.
+name: Nordyg
+options:
+  bundleIdPrefix: foo.n0rdy
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+targets:
+  Nordyg:
+    type: application
+    platform: macOS
+    sources:
+      - path: Nordyg
+      - path: NordygCore
+        buildPhase: none
+    info:
+      path: Nordyg/Info.plist
+      properties:
+        CFBundleName: Nordyg
+        CFBundleDisplayName: Nordyg
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: "13.0"
+        NSHumanReadableCopyright: "Copyright © 2026 n0rdy. Apache 2.0."
+        NSHighResolutionCapable: true
+    entitlements:
+      path: Nordyg/Nordyg.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: foo.n0rdy.nordyg
+        PRODUCT_NAME: Nordyg
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/NordygCore
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/../core/build
+        OTHER_LDFLAGS: ["-lnordyg", "-lresolv"]
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        DEAD_CODE_STRIPPING: YES
+    dependencies:
+      - sdk: CoreFoundation.framework
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+schemes:
+  Nordyg:
+    build:
+      targets:
+        Nordyg: all
+    run:
+      config: Debug
+    archive:
+      config: Release

@@ -20,6 +20,8 @@ jobs:
         run: make archive
       - name: Swift bridge smoke test
         run: make smoke
+      - name: Build app
+        run: make app
       - uses: actions/upload-artifact@v4
         with:
           name: libnordyg

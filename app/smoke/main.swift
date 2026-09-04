@@ -1,93 +1,96 @@
-// Bridge smoke harness: proves the three-function C surface works from Swift
-// on the built archive. No network by default; set NORDYG_SMOKE_NET=1 to add a
-// live query. Run via `make smoke`.
+// Bridge smoke harness: exercises the C surface through the app's own bridge
+// wrapper and Codable models (compiled in from app/Nordyg/Core), so the JSON
+// the core emits is proven to decode into the types the views use.
+// No network by default; NORDYG_SMOKE_NET=1 adds live checks. Run: make smoke.
 
 import Foundation
 import NordygCore
-
-struct BridgeError: Decodable { let code: String; let message: String }
-struct Envelope<T: Decodable>: Decodable {
-    let id: String
-    let ok: Bool
-    let result: T?
-    let error: BridgeError?
-}
-struct Ping: Decodable { let version: String; let ops: [String] }
-struct Record: Decodable { let name: String; let type: String; let ttl: UInt32; let rdata: String }
-struct Message: Decodable { let rcode: String; let answer: [Record] }
-struct Exchange: Decodable { let `protocol`: String; let rtt_ms: Double }
-struct Link: Decodable { let zone: String; let status: String }
-struct DNSSEC: Decodable { let status: String; let reason: String; let chain: [Link] }
-struct QueryResult: Decodable { let message: Message; let exchange: Exchange; let dnssec: DNSSEC? }
-struct Hop: Decodable { let zone: String; let server: Server }
-struct Server: Decodable { let name: String; let address: String }
-struct TraceResult: Decodable { let hops: [Hop]; let final: Message; let dnssec: DNSSEC? }
-
-func call<T: Decodable>(_ op: String, params: [String: Any] = [:], id: String = UUID().uuidString) throws -> Envelope<T> {
-    let body = try JSONSerialization.data(withJSONObject: ["id": id, "op": op, "params": params])
-    let json = String(decoding: body, as: UTF8.self)
-    // const char* on the C side, so the withCString pointer passes straight through.
-    guard let raw = json.withCString({ NordygQuery($0) }) else {
-        throw NSError(domain: "smoke", code: 1, userInfo: [NSLocalizedDescriptionKey: "NordygQuery returned NULL"])
-    }
-    defer { NordygFree(raw) }
-    return try JSONDecoder().decode(Envelope<T>.self, from: Data(String(cString: raw).utf8))
-}
 
 func check(_ cond: Bool, _ msg: String) {
     if !cond { print("FAIL: \(msg)"); exit(1) }
     print("ok   \(msg)")
 }
 
-// 1. ping: bridge round trip, id echo, op discovery.
-let ping: Envelope<Ping> = try call("ping", id: "smoke-ping")
-check(ping.ok && ping.id == "smoke-ping", "ping echoes id")
-check(ping.result?.ops.contains("query") == true, "ping lists query op (version \(ping.result?.version ?? "?"))")
+@main
+struct Smoke {
+    static func main() async throws {
+        let core = Core.shared
 
-// 2. error path: unknown op comes back as a structured error, not a crash.
-let bad: Envelope<Ping> = try call("no-such-op")
-check(!bad.ok && bad.error?.code == "unknown_op", "unknown op is a structured error")
+        // 1. ping: bridge round trip and op discovery through the typed wrapper.
+        let ping: PingResult = try await core.call("ping")
+        check(ping.contractVersion == 1 && ping.ops.contains("query") && ping.ops.contains("trace"), "ping decodes (version \(ping.version), ops \(ping.ops.count))")
 
-// 3. malformed JSON straight into the C function.
-let mal = "{".withCString { NordygQuery($0) }!
-let malText = String(cString: mal)
-NordygFree(mal)
-check(malText.contains("bad_request"), "malformed JSON is a structured error")
+        // 2. presets decode into the model, including the NextDNS placeholder flag.
+        let presets: PresetsResult = try await core.call("presets")
+        check(presets.presets.count == 6, "presets decode (\(presets.presets.count))")
+        check(presets.presets.first { $0.id == "nextdns" }?.endpoints.allSatisfy(\.needsPlaceholder) == true, "placeholder endpoints are flagged")
 
-// 4. cancel on an unknown id is a harmless no-op.
-"ghost".withCString { NordygCancel($0) }
-check(true, "cancel of unknown id does not crash")
+        // 3. error path: unknown op arrives as a typed CoreError.
+        do {
+            let _: PingResult = try await core.call("no-such-op")
+            check(false, "unknown op should throw")
+        } catch let e as CoreError {
+            check(e.code == "unknown_op", "unknown op is CoreError(\(e.code))")
+        }
 
-// 5. optional live query.
-if ProcessInfo.processInfo.environment["NORDYG_SMOKE_NET"] == "1" {
-    let q: Envelope<QueryResult> = try call("query", params: [
-        "question": ["name": "n0rdy.foo", "type": "A"],
-        "endpoint": ["transport": "udp", "address": "1.1.1.1:53"],
-    ])
-    check(q.ok, "live A query via 1.1.1.1 (\(q.error?.message ?? ""))")
-    if let m = q.result?.message {
-        print("     rcode=\(m.rcode) rtt=\(q.result!.exchange.rtt_ms)ms via \(q.result!.exchange.`protocol`)")
-        for a in m.answer { print("     \(a.name) \(a.ttl) \(a.type) \(a.rdata)") }
+        // 4. bad params arrive as bad_request with the message intact.
+        do {
+            let _: QueryResult = try await core.call("query", QueryParams(question: Question(name: "", type: "A", qclass: nil), endpoint: Endpoint(transport: "udp", address: "127.0.0.1:1", tlsName: nil, url: nil, method: nil, label: nil), options: Options(), validate: false, bootstrap: []))
+            check(false, "empty name should throw")
+        } catch let e as CoreError {
+            check(e.code == "bad_request" && e.message.contains("name"), "validation error: \(e.message)")
+        }
+
+        // 5. malformed JSON straight into the C function still returns an envelope.
+        let mal = "{".withCString { NordygQuery($0) }!
+        let malText = String(cString: mal)
+        NordygFree(mal)
+        check(malText.contains("bad_request"), "malformed JSON is a structured error")
+
+        // 6. cancellation: a query to a black-hole address is cancelled from Swift.
+        let task = Task { () -> String in
+            do {
+                let _: QueryResult = try await core.call("query", QueryParams(question: Question(name: "example.test", type: "A", qclass: nil), endpoint: Endpoint(transport: "tcp", address: "192.0.2.1:53", tlsName: nil, url: nil, method: nil, label: nil), options: Options(timeoutMs: 20000), validate: false, bootstrap: []))
+                return "completed"
+            } catch let e as CoreError { return e.code } catch { return "swift-cancel" }
+        }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        task.cancel()
+        let outcome = await task.value
+        check(outcome == "cancelled" || outcome == "swift-cancel", "cancel aborts an in-flight query (\(outcome))")
+
+        // 7. export needs no network and round-trips Options encoding.
+        let exp: ExportResult = try await core.call("export", ExportParams(question: Question(name: "n0rdy.foo", type: "MX", qclass: nil), endpoint: Endpoint(transport: "dot", address: "9.9.9.9:853", tlsName: "dns.quad9.net", url: nil, method: nil, label: nil), options: Options(dnssecOk: false, timeoutMs: 2000), format: "dig"))
+        check(exp.command == "dig @9.9.9.9 n0rdy.foo MX +tls +tls-hostname=dns.quad9.net +timeout=2", "export encodes options: \(exp.command)")
+
+        if ProcessInfo.processInfo.environment["NORDYG_SMOKE_NET"] == "1" {
+            let cf = Endpoint(transport: "dot", address: "1.1.1.1:853", tlsName: "cloudflare-dns.com", url: nil, method: nil, label: "Cloudflare DoT")
+
+            // 8. full query result decodes, with DNSSEC validated against the live root.
+            let q: QueryResult = try await core.call("query", QueryParams(question: Question(name: "cloudflare.com", type: "A", qclass: nil), endpoint: cf, options: Options(), validate: true, bootstrap: []))
+            check(q.message.rcode == "NOERROR" && !q.message.answer.isEmpty && q.exchange.tls?.certificate != nil, "live DoT query decodes (\(q.message.answer.count) answers, \(q.exchange.rttMs) ms)")
+            check(q.dnssec?.status == "secure" && q.dnssec?.chain.count == 3, "cloudflare.com validates secure (\(q.dnssec?.status ?? "-") \(q.dnssec?.reason ?? ""))")
+            for l in q.dnssec?.chain ?? [] { print("     \(l.zone) \(l.status) \(l.dnskeys.count) keys") }
+
+            // 9. TXT decoding reaches the model as JSONValue.
+            let txt: QueryResult = try await core.call("query", QueryParams(question: Question(name: "cloudflare.com", type: "TXT", qclass: nil), endpoint: cf, options: Options(), validate: false, bootstrap: []))
+            let spf = txt.message.answer.first { $0.decoded?["kind"]?.stringValue == "spf" }
+            check(spf != nil, "SPF record decoded (\(spf?.decoded?["lookup_count"]?.display ?? "?") lookups)")
+
+            // 10. compare groups decode.
+            let cmp: CompareResult = try await core.call("compare", CompareParams(question: Question(name: "n0rdy.foo", type: "A", qclass: nil), endpoints: [Endpoint(transport: "udp", address: "1.1.1.1:53", tlsName: nil, url: nil, method: nil, label: "Cloudflare"), Endpoint(transport: "udp", address: "8.8.8.8:53", tlsName: nil, url: nil, method: nil, label: "Google")], options: Options(), bootstrap: []))
+            check(cmp.results.count == 2 && !cmp.groups.isEmpty, "compare decodes (consistent=\(cmp.consistent), \(cmp.groups.count) groups)")
+
+            // 11. trace decodes with referrals and validation.
+            let tr: TraceResult = try await core.call("trace", TraceParams(question: Question(name: "cloudflare.com", type: "A", qclass: nil), options: Options(), validate: true, bootstrap: [], rootHints: nil))
+            check(tr.hops.count >= 3 && tr.hops[0].referral != nil && tr.dnssec?.status == "secure", "trace decodes (\(tr.hops.count) hops, \(tr.dnssec?.status ?? "-"))")
+            for h in tr.hops { print("     \(h.zone) via \(h.server.name) \(h.server.address)") }
+
+            // 12. system resolvers are discoverable from the sandbox-safe API.
+            let sys = SystemResolvers.endpoints()
+            check(!sys.isEmpty, "system resolvers found: \(sys.map { $0.address ?? "?" }.joined(separator: " "))")
+        }
+
+        print("smoke passed")
     }
-
-    // 6. DNSSEC validation against the live root keys, over DoT.
-    let v: Envelope<QueryResult> = try call("query", params: [
-        "question": ["name": "cloudflare.com", "type": "A"],
-        "endpoint": ["transport": "dot", "address": "1.1.1.1:853", "tls_name": "cloudflare-dns.com"],
-        "validate": true,
-    ])
-    let status = v.result?.dnssec?.status ?? "missing"
-    check(v.ok && status == "secure", "cloudflare.com validates as secure via DoT (\(status) \(v.result?.dnssec?.reason ?? v.error?.message ?? ""))")
-    for l in v.result?.dnssec?.chain ?? [] { print("     \(l.zone) \(l.status)") }
-
-    // 7. Trace from the real root servers with validation.
-    let tr: Envelope<TraceResult> = try call("trace", params: [
-        "question": ["name": "cloudflare.com", "type": "A"],
-        "validate": true,
-    ])
-    let tstatus = tr.result?.dnssec?.status ?? "missing"
-    check(tr.ok && tstatus == "secure", "trace to cloudflare.com validates as secure (\(tstatus) \(tr.result?.dnssec?.reason ?? tr.error?.message ?? ""))")
-    for h in tr.result?.hops ?? [] { print("     \(h.zone) via \(h.server.name) \(h.server.address)") }
 }
-
-print("smoke passed")
