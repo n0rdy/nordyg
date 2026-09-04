@@ -13,8 +13,15 @@ struct Envelope<T: Decodable>: Decodable {
     let error: BridgeError?
 }
 struct Ping: Decodable { let version: String; let ops: [String] }
-struct Record: Decodable { let name: String; let type: String; let ttl: UInt32; let data: String }
-struct QueryResult: Decodable { let rcode: String; let answers: [Record]; let rtt_ms: Int }
+struct Record: Decodable { let name: String; let type: String; let ttl: UInt32; let rdata: String }
+struct Message: Decodable { let rcode: String; let answer: [Record] }
+struct Exchange: Decodable { let `protocol`: String; let rtt_ms: Double }
+struct Link: Decodable { let zone: String; let status: String }
+struct DNSSEC: Decodable { let status: String; let reason: String; let chain: [Link] }
+struct QueryResult: Decodable { let message: Message; let exchange: Exchange; let dnssec: DNSSEC? }
+struct Hop: Decodable { let zone: String; let server: Server }
+struct Server: Decodable { let name: String; let address: String }
+struct TraceResult: Decodable { let hops: [Hop]; let final: Message; let dnssec: DNSSEC? }
 
 func call<T: Decodable>(_ op: String, params: [String: Any] = [:], id: String = UUID().uuidString) throws -> Envelope<T> {
     let body = try JSONSerialization.data(withJSONObject: ["id": id, "op": op, "params": params])
@@ -53,9 +60,34 @@ check(true, "cancel of unknown id does not crash")
 
 // 5. optional live query.
 if ProcessInfo.processInfo.environment["NORDYG_SMOKE_NET"] == "1" {
-    let q: Envelope<QueryResult> = try call("query", params: ["name": "n0rdy.foo", "type": "A", "server": "1.1.1.1:53"])
+    let q: Envelope<QueryResult> = try call("query", params: [
+        "question": ["name": "n0rdy.foo", "type": "A"],
+        "endpoint": ["transport": "udp", "address": "1.1.1.1:53"],
+    ])
     check(q.ok, "live A query via 1.1.1.1 (\(q.error?.message ?? ""))")
-    for a in q.result?.answers ?? [] { print("     \(a.name) \(a.ttl) \(a.type) \(a.data)") }
+    if let m = q.result?.message {
+        print("     rcode=\(m.rcode) rtt=\(q.result!.exchange.rtt_ms)ms via \(q.result!.exchange.`protocol`)")
+        for a in m.answer { print("     \(a.name) \(a.ttl) \(a.type) \(a.rdata)") }
+    }
+
+    // 6. DNSSEC validation against the live root keys, over DoT.
+    let v: Envelope<QueryResult> = try call("query", params: [
+        "question": ["name": "cloudflare.com", "type": "A"],
+        "endpoint": ["transport": "dot", "address": "1.1.1.1:853", "tls_name": "cloudflare-dns.com"],
+        "validate": true,
+    ])
+    let status = v.result?.dnssec?.status ?? "missing"
+    check(v.ok && status == "secure", "cloudflare.com validates as secure via DoT (\(status) \(v.result?.dnssec?.reason ?? v.error?.message ?? ""))")
+    for l in v.result?.dnssec?.chain ?? [] { print("     \(l.zone) \(l.status)") }
+
+    // 7. Trace from the real root servers with validation.
+    let tr: Envelope<TraceResult> = try call("trace", params: [
+        "question": ["name": "cloudflare.com", "type": "A"],
+        "validate": true,
+    ])
+    let tstatus = tr.result?.dnssec?.status ?? "missing"
+    check(tr.ok && tstatus == "secure", "trace to cloudflare.com validates as secure (\(tstatus) \(tr.result?.dnssec?.reason ?? tr.error?.message ?? ""))")
+    for h in tr.result?.hops ?? [] { print("     \(h.zone) via \(h.server.name) \(h.server.address)") }
 }
 
 print("smoke passed")

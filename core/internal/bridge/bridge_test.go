@@ -79,6 +79,14 @@ func TestDispatchTypedErrorKeepsCode(t *testing.T) {
 		t.Fatalf("unexpected: %+v", r)
 	}
 
+	d.Register("detailed", func(context.Context, json.RawMessage) (any, error) {
+		return nil, &Error{Code: "http", Message: "404", Details: map[string]any{"status": 404}}
+	})
+	r = decode(t, d.Dispatch([]byte(`{"id":"r3","op":"detailed"}`)))
+	if r.Error == nil || r.Error.Details["status"] != float64(404) {
+		t.Fatalf("details lost: %+v", r.Error)
+	}
+
 	d.Register("plain", func(context.Context, json.RawMessage) (any, error) {
 		return nil, errors.New("something")
 	})

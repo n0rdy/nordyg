@@ -1,7 +1,8 @@
 # Nordyg
 
 macOS DNS client: Go core (`core/`) compiled to a universal C archive, SwiftUI shell (`app/`).
-See `CONTEXT.md` (local only, not committed) for decisions and the bridge rules.
+See `CONTEXT.md` (local only, not committed) for decisions and the bridge rules, and
+`docs/contract.md` for the JSON contract every op must follow.
 
 ## Commands
 
@@ -9,6 +10,17 @@ See `CONTEXT.md` (local only, not committed) for decisions and the bridge rules.
 - `make archive` — universal `core/build/libnordyg.a` + header, copies header to `app/NordygCore/`.
 - `make smoke` — Swift bridge harness; `NORDYG_SMOKE_NET=1 make smoke` adds a live query.
 - `make lint` — golangci-lint.
+
+## Core layout (`core/internal/`)
+
+- `bridge` envelope, dispatch, panic recovery, cancel registry (no cgo).
+- `contract` shared JSON types, endpoint/question/options validation.
+- `transport` udp/tcp/dot/doh/doq exchanges, bootstrap, error classification.
+- `msg` miekg message → contract message (typed fields, EDNS, dig text).
+- `query`, `compare`, `trace`, `presets`, `export` the ops; `ops` wires them.
+- `dnssec` trust anchors (`trustanchors.txt`), chain walk, NSEC/NSEC3 proofs, fetchers.
+- `txtdecode` SPF/DMARC/DKIM decoding, attached to TXT records by the query decorator.
+- `testdns` in-process UDP/TCP/DoT/DoH/DoQ servers and certs for tests only.
 
 ## Rules
 

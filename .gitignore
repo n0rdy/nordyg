@@ -3,6 +3,8 @@
 *.iml
 CONTEXT.md
 
+docs/
+
 # build outputs
 core/build/
 app/NordygCore/libnordyg.h

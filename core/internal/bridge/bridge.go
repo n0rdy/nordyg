@@ -37,10 +37,11 @@ type Response struct {
 }
 
 // Error is the error half of the envelope. Code is stable and machine-readable;
-// Message is for humans.
+// Message is for humans. Details carries code-specific extra data.
 type Error struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    string         `json:"code"`
+	Message string         `json:"message"`
+	Details map[string]any `json:"details,omitempty"`
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
@@ -168,7 +169,7 @@ func toResponse(id string, err error, ctx context.Context) Response {
 	var e *Error
 	switch {
 	case errors.As(err, &e):
-		return fail(id, e.Code, e.Message)
+		return Response{ID: id, OK: false, Error: &Error{Code: e.Code, Message: e.Message, Details: e.Details}}
 	case errors.Is(err, context.Canceled) || ctx.Err() != nil:
 		return fail(id, CodeCancelled, "request cancelled")
 	default:

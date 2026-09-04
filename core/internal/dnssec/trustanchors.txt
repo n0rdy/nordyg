@@ -1,0 +1,6 @@
+; Root zone trust anchors as DS records, from https://data.iana.org/root-anchors/root-anchors.xml
+; Both keys ship so the app keeps validating across the 2026-10-11 rollover.
+; KSK-2017 (retired January 2027):
+. IN DS 20326 8 2 E06D44B80B8F1D39A95C0B0D7C65D08458E880409BBC683457104237C7F8EC8D
+; KSK-2024 (signing from 2026-10-11):
+. IN DS 38696 8 2 683D2D0ACB8C9B712A1948B27F741219298D0A450D612C483AF444A4C0FB2B16
