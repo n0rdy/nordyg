@@ -187,7 +187,7 @@ func TestSecureNSEC3(t *testing.T) {
 func TestInsecureDelegation(t *testing.T) {
 	w := newWorld(t)
 	res := w.query(t, "unsigned.test.", dns.TypeA)
-	if res.Status != Insecure || !strings.Contains(res.Reason, "unsigned.test. is an unsigned delegation") {
+	if res.Status != Insecure || !strings.Contains(res.Reason, "no DS record for unsigned.test, proven by an NSEC record in the .test zone") {
 		t.Fatalf("%s %s", res.Status, res.Reason)
 	}
 	if got := strings.Join(zones(res), " "); got != ".:secure test.:secure unsigned.test.:insecure" {

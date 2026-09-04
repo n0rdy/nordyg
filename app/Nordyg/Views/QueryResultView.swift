@@ -60,7 +60,7 @@ struct RcodeBadge: View {
 struct StatusBadge: View {
     var status: String
     var body: some View {
-        Label(status, systemImage: icon)
+        Label(DNSSECWording.label(status), systemImage: icon)
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(color.opacity(0.2))
@@ -118,32 +118,39 @@ struct RecordsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VSplitView {
-                Table(rows, selection: $selection) {
-                    TableColumn("Section") { Text($0.section).foregroundStyle(.secondary) }.width(min: 60, ideal: 80, max: 100)
-                    TableColumn("Name") { Text($0.record.name).font(.system(.body, design: .monospaced)) }.width(min: 120, ideal: 220)
-                    TableColumn("TTL") { Text("\($0.record.ttl)").monospacedDigit() }.width(min: 50, ideal: 64, max: 90)
-                    TableColumn("Type") { Text($0.record.type).font(.system(.body, design: .monospaced)) }.width(min: 50, ideal: 70, max: 100)
-                    TableColumn("Data") { row in
-                        HStack(spacing: 6) {
-                            Text(row.record.rdata).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(.middle)
-                            if row.record.decoded != nil { Image(systemName: "text.magnifyingglass").foregroundStyle(.secondary) }
-                        }
-                    }
-                }
-                .contextMenu(forSelectionType: RecordRow.ID.self) { ids in
-                    if let id = ids.first, let row = rows.first(where: { $0.id == id }) {
-                        Button("Copy data") { Pasteboard.copy(row.record.rdata) }
-                        Button("Copy record") { Pasteboard.copy("\(row.record.name) \(row.record.ttl) IN \(row.record.type) \(row.record.rdata)") }
-                        if let t = row.record.target {
-                            Divider()
-                            Button("Resolve \(t) (A)") { model.resolve(t) }
-                            Button("Resolve \(t) (AAAA)") { model.resolve(t, type: "AAAA") }
-                        }
-                    }
-                }
+                recordTable(rows)
+                    .frame(minHeight: 140, maxHeight: .infinity)
                 if let id = selection, let row = rows.first(where: { $0.id == id }) {
-                    RecordDetail(record: row.record)
-                        .frame(minHeight: 120, idealHeight: 180)
+                    RecordDetail(record: row.record) { selection = nil }
+                        .frame(minHeight: 90, idealHeight: 200, maxHeight: .infinity)
+                }
+            }
+            .onExitCommand { selection = nil }
+        }
+    }
+
+    @ViewBuilder
+    private func recordTable(_ rows: [RecordRow]) -> some View {
+        Table(rows, selection: $selection) {
+            TableColumn("Section") { Text($0.section).foregroundStyle(.secondary) }.width(min: 60, ideal: 80, max: 100)
+            TableColumn("Name") { Text($0.record.name).font(.system(.body, design: .monospaced)) }.width(min: 120, ideal: 220)
+            TableColumn("TTL") { Text("\($0.record.ttl)").monospacedDigit() }.width(min: 50, ideal: 64, max: 90)
+            TableColumn("Type") { Text($0.record.type).font(.system(.body, design: .monospaced)) }.width(min: 50, ideal: 70, max: 100)
+            TableColumn("Data") { row in
+                HStack(spacing: 6) {
+                    Text(row.record.rdata).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                    if row.record.decoded != nil { Image(systemName: "text.magnifyingglass").foregroundStyle(.secondary) }
+                }
+            }
+        }
+        .contextMenu(forSelectionType: RecordRow.ID.self) { ids in
+            if let id = ids.first, let row = rows.first(where: { $0.id == id }) {
+                Button("Copy data") { Pasteboard.copy(row.record.rdata) }
+                Button("Copy record") { Pasteboard.copy("\(row.record.name) \(row.record.ttl) IN \(row.record.type) \(row.record.rdata)") }
+                if let t = row.record.target {
+                    Divider()
+                    Button("Resolve \(t) (A)") { model.resolve(t) }
+                    Button("Resolve \(t) (AAAA)") { model.resolve(t, type: "AAAA") }
                 }
             }
         }
@@ -152,7 +159,23 @@ struct RecordsView: View {
 
 struct RecordDetail: View {
     var record: Record
+    var close: () -> Void
     var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("\(record.type) record").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Button { close() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain)
+                    .help("Close (Esc)")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            Divider()
+            detail
+        }
+    }
+
+    private var detail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 Text("\(record.name) \(record.ttl) \(record.qclass) \(record.type) \(record.rdata)")

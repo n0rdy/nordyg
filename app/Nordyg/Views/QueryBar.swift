@@ -30,13 +30,25 @@ struct QueryBar: View {
                 .frame(width: 220)
 
                 if model.isRunning {
-                    Button("Cancel") { model.cancel() }
+                    Button {
+                        model.cancel()
+                    } label: {
+                        Label("Cancel", systemImage: "stop.fill").frame(minWidth: 70)
+                    }
+                    .controlSize(.large)
+                    .tint(.red)
                     ProgressView().controlSize(.small)
                 } else {
-                    Button("Run") { model.run() }
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(!model.canRun)
-                        .buttonStyle(.borderedProminent)
+                    Button {
+                        model.run()
+                    } label: {
+                        Label("Run", systemImage: "play.fill").frame(minWidth: 70)
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!model.canRun)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(.green)
                 }
             }
 

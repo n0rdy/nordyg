@@ -7,9 +7,14 @@ struct DNSSECView: View {
         if let r = result {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 10) {
+                    HStack(alignment: .top, spacing: 10) {
                         StatusBadge(status: r.status)
-                        if !r.reason.isEmpty { Text(r.reason).textSelection(.enabled) }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(DNSSECWording.headline(r)).textSelection(.enabled)
+                            if let detail = DNSSECWording.detail(r) {
+                                Text(detail).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                        }
                         Spacer()
                         if let a = r.trustAnchor { Text("anchor: KSK \(a.keyTag) (\(a.algorithmName))").foregroundStyle(.secondary).font(.callout) }
                     }
@@ -50,11 +55,13 @@ struct LinkView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(link.zone).font(.system(.body, design: .monospaced).weight(.semibold))
-                    Text(link.status).foregroundStyle(.secondary)
+                    Text(DNSSECWording.label(link.status)).foregroundStyle(.secondary)
                     Spacer()
                     Button(open ? "Hide" : "Keys") { open.toggle() }.buttonStyle(.link).font(.callout)
                 }
-                if let reason = link.reason, !reason.isEmpty { Text(reason).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
+                if let reason = link.reason, !reason.isEmpty {
+                    Text(reason).font(.callout).foregroundStyle(link.status == "bogus" ? Color.red : Color.secondary).textSelection(.enabled)
+                }
                 Text(keySummary).font(.callout).foregroundStyle(.secondary)
                 if open {
                     VStack(alignment: .leading, spacing: 3) {
@@ -105,4 +112,52 @@ struct SignatureRow: View {
         if days < 1 { return String(format: "in %.0f h", days * 24) }
         return String(format: "in %.0f d", days)
     }
+}
+
+/// Plain-language wording for DNSSEC verdicts. "insecure" is DNSSEC jargon
+/// for "not signed" and reads as alarming, so the UI says "unsigned".
+enum DNSSECWording {
+    static func label(_ status: String) -> String {
+        switch status {
+        case "secure": return "secure"
+        case "insecure": return "unsigned"
+        case "bogus": return "bogus"
+        default: return "indeterminate"
+        }
+    }
+
+    static func headline(_ r: DNSSECResult) -> String {
+        switch r.status {
+        case "secure":
+            return "Signed and validated from the root down."
+        case "insecure":
+            let zone = r.chain.last { $0.status == "insecure" }?.zone ?? r.chain.last?.zone ?? "This name"
+            let parent = r.chain.last { $0.status == "secure" }?.zone ?? "its parent"
+            return "\(prose(zone)) is not signed with DNSSEC. \(proseZone(parent).capitalizedFirst) confirms there is no DS record, so there is nothing to validate. This is the normal state for most domains."
+        case "bogus":
+            return "Validation failed. The data cannot be trusted, or the zone is misconfigured."
+        default:
+            return "Could not decide: something needed for validation was unavailable."
+        }
+    }
+
+    static func detail(_ r: DNSSECResult) -> String? {
+        r.reason.isEmpty ? nil : r.reason
+    }
+}
+
+/// Names for prose: no trailing dot, and TLDs written as ".me" so they do
+/// not read like words.
+func prose(_ name: String) -> String {
+    name == "." ? "the root" : String(name.hasSuffix(".") ? name.dropLast() : Substring(name))
+}
+
+func proseZone(_ zone: String) -> String {
+    let bare = zone.hasSuffix(".") ? String(zone.dropLast()) : zone
+    if bare.isEmpty { return "the root zone" }
+    return bare.contains(".") ? "the zone \(bare)" : "the .\(bare) zone"
+}
+
+extension String {
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }

@@ -153,14 +153,16 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 			switch p.kind {
 			case proofNoData:
 				if p.delegation {
-					w.res.Chain = append(w.res.Chain, Link{Zone: cand, Status: Insecure, Reason: "unsigned delegation: no DS, proven by the parent", DNSKeys: []KeyRef{}, DS: []DSRef{}, Signatures: p.signatures})
-					w.fail(Insecure, cand+" is an unsigned delegation (no DS record, proven by "+w.zone+")")
+					reason := "unsigned delegation: no DS record for " + prose(cand) + ", proven by an NSEC record in " + proseZone(w.zone)
+					w.res.Chain = append(w.res.Chain, Link{Zone: cand, Status: Insecure, Reason: reason, DNSKeys: []KeyRef{}, DS: []DSRef{}, Signatures: p.signatures})
+					w.fail(Insecure, reason)
 					return nil
 				}
 				// Not a zone cut; keep descending in the same zone.
 			case proofOptOut:
-				w.res.Chain = append(w.res.Chain, Link{Zone: cand, Status: Insecure, Reason: "inside an NSEC3 opt-out span of " + w.zone, DNSKeys: []KeyRef{}, DS: []DSRef{}, Signatures: p.signatures})
-				w.fail(Insecure, cand+" lies in an NSEC3 opt-out span of "+w.zone+"; any delegation there is unsigned")
+				reason := "unsigned delegation: no DS record for " + prose(cand) + ", proven by an NSEC3 opt-out record in " + proseZone(w.zone) + " (RFC 5155)"
+				w.res.Chain = append(w.res.Chain, Link{Zone: cand, Status: Insecure, Reason: reason, DNSKeys: []KeyRef{}, DS: []DSRef{}, Signatures: p.signatures})
+				w.fail(Insecure, reason)
 				return nil
 			case proofNXDomain:
 				// The name does not exist; nothing below it can be a cut.
@@ -322,4 +324,24 @@ func sigsToRR(sigs []*dns.RRSIG) []dns.RR {
 		out = append(out, s)
 	}
 	return out
+}
+
+// prose renders a name for human-readable messages: no trailing dot.
+func prose(name string) string {
+	if name == "." {
+		return "the root"
+	}
+	return strings.TrimSuffix(name, ".")
+}
+
+// proseZone renders a zone for prose so a TLD does not read like a word:
+// "." → "the root zone", "me." → "the .me zone", "example.com." → "the zone example.com".
+func proseZone(zone string) string {
+	switch dns.CountLabel(zone) {
+	case 0:
+		return "the root zone"
+	case 1:
+		return "the ." + strings.TrimSuffix(zone, ".") + " zone"
+	}
+	return "the zone " + strings.TrimSuffix(zone, ".")
 }
