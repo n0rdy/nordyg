@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.0"
+          cache-dependency-path: core/go.sum
+      - name: Go tests
+        run: make test
+      - name: Universal archive
+        run: make archive
+      - name: Swift bridge smoke test
+        run: make smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libnordyg
+          path: |
+            core/build/libnordyg.a
+            core/build/libnordyg.h

@@ -1,0 +1,13 @@
+.idea/
+
+*.iml
+CONTEXT.md
+
+# build outputs
+core/build/
+app/NordygCore/libnordyg.h
+app/build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.DS_Store

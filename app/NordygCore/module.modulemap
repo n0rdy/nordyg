@@ -1,0 +1,4 @@
+module NordygCore {
+    header "libnordyg.h"
+    export *
+}
