@@ -96,6 +96,14 @@ struct Smoke {
                   "email report decodes (overall \(em.overall.status): mx \(em.mx.verdict.status), spf \(em.spf.totalLookups) lookups \(em.spf.verdict.status), dkim \(em.dkim.verdict.status), dmarc \(em.dmarc.verdict.status), mta-sts \(em.mtaSts.verdict.status), bimi \(em.bimi.verdict.status), dnsbl \(em.dnsbl.verdict.status))")
             print("     \(em.overall.message)")
 
+            // 13d. registration data: RDAP for a gTLD, WHOIS fallback for a ccTLD without RDAP.
+            let rd: RDAPResult = try await core.call("rdap", RDAPParams(domain: "n0rdy.foo", endpoint: cf, options: Options(), bootstrap: []))
+            check(rd.source == "rdap" && rd.found && rd.registrar.name != nil && rd.expires != nil && !rd.nameservers.isEmpty,
+                  "rdap n0rdy.foo: \(rd.registrar.name ?? "?") (IANA \(rd.registrar.ianaId ?? "?")), expires \(rd.expires ?? "?"), \(rd.status.count) status, ns \(rd.nameservers.count), bootstrap \(rd.bootstrapSource)")
+            let wh: RDAPResult = try await core.call("rdap", RDAPParams(domain: "retrek.me", endpoint: cf, options: Options(), bootstrap: []))
+            check(wh.found && !wh.nameservers.isEmpty,
+                  "registry retrek.me via \(wh.source) \(wh.server): \(wh.registrar.name ?? "?"), expires \(wh.expires ?? "?"), ns \(wh.nameservers.joined(separator: " "))")
+
             // 13c. optional: full report for a domain of your choice.
             if let dom = ProcessInfo.processInfo.environment["NORDYG_SMOKE_MAIL_DOMAIN"], !dom.isEmpty {
                 let r: EmailResult = try await core.call("email", EmailParams(domain: dom, endpoint: cf, options: Options(), bootstrap: [], extraDkimSelectors: []))

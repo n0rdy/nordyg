@@ -14,6 +14,7 @@ import (
 	"github.com/n0rdy/nordyg/core/internal/export"
 	"github.com/n0rdy/nordyg/core/internal/presets"
 	"github.com/n0rdy/nordyg/core/internal/query"
+	"github.com/n0rdy/nordyg/core/internal/rdap"
 	"github.com/n0rdy/nordyg/core/internal/trace"
 	"github.com/n0rdy/nordyg/core/internal/transport"
 	"github.com/n0rdy/nordyg/core/internal/txtdecode"
@@ -54,6 +55,7 @@ func NewWith(tc *transport.Client) *bridge.Dispatcher {
 	(&compare.Op{Query: q}).Register(d)
 	(&trace.Op{Client: tc, Decorate: txtdecode.Decorate, Validator: dnssec.TraceHook{V: v, Client: tc}}).Register(d)
 	(&email.Op{Client: tc}).Register(d)
+	rdap.New(tc).Register(d)
 	presets.Register(d)
 	export.Register(d)
 	return d

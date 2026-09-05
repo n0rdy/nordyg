@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 enum Mode: String, CaseIterable, Identifiable {
-    case query, compare, trace, email
+    case query, compare, trace, email, registry
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -10,6 +10,7 @@ enum Mode: String, CaseIterable, Identifiable {
         case .compare: return "Compare"
         case .trace: return "Trace"
         case .email: return "Email"
+        case .registry: return "Registry"
         }
     }
 }
@@ -19,6 +20,7 @@ enum Outcome {
     case compare(CompareResult)
     case trace(TraceResult)
     case email(EmailResult)
+    case registry(RDAPResult)
 }
 
 @MainActor
@@ -44,6 +46,10 @@ final class AppModel: ObservableObject {
     @Published var outcome: Outcome?
     @Published var resultVersion = 0
 
+    // Watches
+    let watches = WatchCenter()
+    @Published var selectedWatch: UUID?
+
     // Cache visibility
     @Published var authoritative: [String: AuthoritativeAnswer] = [:]
     @Published var fetchingAuthoritative: Set<String> = []
@@ -53,6 +59,10 @@ final class AppModel: ObservableObject {
 
     private var task: Task<Void, Never>?
     private let core = Core.shared
+
+    init() {
+        watches.bootstrap = { [weak self] in self?.bootstrap ?? [] }
+    }
 
     /// Every endpoint the picker offers, in display order.
     var allEndpoints: [Endpoint] {
@@ -91,7 +101,7 @@ final class AppModel: ObservableObject {
         let n = name.trimmingCharacters(in: .whitespaces)
         if n.isEmpty || isRunning { return false }
         switch mode {
-        case .query, .email: return selected != nil
+        case .query, .email, .registry: return selected != nil
         case .compare: return !compareSelection.isEmpty
         case .trace: return true
         }
@@ -102,7 +112,7 @@ final class AppModel: ObservableObject {
         let n = name.trimmingCharacters(in: .whitespaces)
         var t = type
         // Typing an IP address means a reverse lookup unless a type was chosen deliberately.
-        if mode != .email, t == "A" || t == "ALL", isIPAddress(n) { t = "PTR"; type = "PTR" }
+        if mode != .email, mode != .registry, t == "A" || t == "ALL", isIPAddress(n) { t = "PTR"; type = "PTR" }
         let selector = dkimSelector.trimmingCharacters(in: .whitespaces)
         let question = Question(name: n, type: t, qclass: nil)
         let mode = self.mode
@@ -114,6 +124,7 @@ final class AppModel: ObservableObject {
 
         errorMessage = nil
         isRunning = true
+        selectedWatch = nil
         systemView = nil
         if mode == .query, ["A", "AAAA", "ALL"].contains(t) {
             Task { [weak self] in
@@ -144,10 +155,14 @@ final class AppModel: ObservableObject {
                     guard let endpoint else { return }
                     let r: EmailResult = try await self.core.call("email", EmailParams(domain: n, endpoint: endpoint, options: opts, bootstrap: boot, extraDkimSelectors: selector.isEmpty ? [] : [selector]))
                     out = .email(r)
+                case .registry:
+                    guard let endpoint else { return }
+                    let r: RDAPResult = try await self.core.call("rdap", RDAPParams(domain: n, endpoint: endpoint, options: opts, bootstrap: boot))
+                    out = .registry(r)
                 }
                 self.outcome = out
                 self.resultVersion += 1
-                self.remember(HistoryItem(name: n, type: mode == .email ? "MAIL" : t, mode: mode.rawValue, endpoint: (mode == .query || mode == .email) ? endpoint : nil))
+                self.remember(HistoryItem(name: n, type: mode == .email ? "MAIL" : (mode == .registry ? "RDAP" : t), mode: mode.rawValue, endpoint: (mode == .query || mode == .email || mode == .registry) ? endpoint : nil))
             } catch is CancellationError {
                 // user cancelled
             } catch let e as CoreError {
@@ -176,6 +191,19 @@ final class AppModel: ObservableObject {
     func cancel() {
         task?.cancel()
     }
+
+    /// Start watching the current question at the selected resolver.
+    func watchCurrent(interval: Int) {
+        guard let ep = selected else { return }
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        var t = type == "ALL" ? "A" : type
+        if t == "A", isIPAddress(n) { t = "PTR" }
+        let w = watches.add(question: Question(name: n, type: t, qclass: nil), endpoint: ep, interval: interval)
+        selectedWatch = w.id
+    }
+
+    var canWatch: Bool { mode == .query && selected != nil && !name.trimmingCharacters(in: .whitespaces).isEmpty }
 
     // MARK: cache visibility
 
@@ -230,7 +258,7 @@ final class AppModel: ObservableObject {
 
     func rerun(_ item: HistoryItem) {
         name = item.name
-        if item.type != "MAIL" { type = item.type }
+        if item.type != "MAIL" && item.type != "RDAP" { type = item.type }
         mode = Mode(rawValue: item.mode) ?? .query
         if let ep = item.endpoint { selected = ep }
         run()
@@ -263,6 +291,7 @@ final class AppModel: ObservableObject {
         case .compare(let r): data = try? enc.encode(r)
         case .trace(let r): data = try? enc.encode(r)
         case .email(let r): data = try? enc.encode(r)
+        case .registry(let r): data = try? enc.encode(r)
         case nil: data = nil
         }
         return data.flatMap { String(data: $0, encoding: .utf8) }

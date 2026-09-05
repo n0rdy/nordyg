@@ -26,7 +26,7 @@ func TestPingListsOps(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &res); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"compare", "email", "export", "ping", "presets", "query", "trace"}
+	want := []string{"compare", "email", "export", "ping", "presets", "query", "rdap", "trace"}
 	if len(res.Ops) != len(want) {
 		t.Fatalf("ops = %v, want %v", res.Ops, want)
 	}

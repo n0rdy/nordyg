@@ -264,6 +264,45 @@ struct ExportResult: Codable { var command: String }
 
 struct PingResult: Codable { var contractVersion: Int; var version: String; var ops: [String] }
 
+// MARK: rdap
+
+struct RDAPParams: Codable {
+    var domain: String
+    var endpoint: Endpoint
+    var options: Options
+    var bootstrap: [Endpoint]
+}
+struct RDAPEvent: Codable, Hashable { var action: String; var date: String }
+struct RDAPContact: Codable, Hashable { var roles: [String]; var handle: String?; var name: String?; var org: String?; var email: String?; var phone: String? }
+struct RDAPRegistrar: Codable, Hashable { var name: String?; var ianaId: String?; var url: String?; var abuseEmail: String?; var abusePhone: String? }
+struct RDAPStatus: Codable, Hashable { var code: String; var meaning: String }
+struct RDAPDS: Codable, Hashable { var keyTag: Int; var algorithm: Int; var digestType: Int; var digest: String }
+struct RDAPDNSSEC: Codable, Hashable { var known: Bool; var signed: Bool; var ds: [RDAPDS] }
+struct RDAPResult: Codable, Hashable {
+    var domain: String
+    var source: String
+    var server: String
+    var registrarServer: String?
+    var found: Bool
+    var handle: String?
+    var status: [RDAPStatus]
+    var registered: String?
+    var expires: String?
+    var updated: String?
+    var expiresInDays: Int?
+    var registrar: RDAPRegistrar
+    var contacts: [RDAPContact]
+    var nameservers: [String]
+    var dnsNameservers: [String]
+    var nsMismatch: Bool
+    var dnssec: RDAPDNSSEC
+    var events: [RDAPEvent]
+    var notices: [String]
+    var warnings: [String]
+    var raw: String
+    var bootstrapSource: String
+}
+
 // MARK: email
 
 struct EmailParams: Codable {

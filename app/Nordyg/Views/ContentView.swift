@@ -20,6 +20,17 @@ struct ContentView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
+                    ForEach(WatchCenter.intervals, id: \.self) { s in
+                        Button("Every \(WatchCenter.intervalLabel(s))") { model.watchCurrent(interval: s) }
+                    }
+                } label: {
+                    Label("Watch", systemImage: "eye")
+                }
+                .help("Re-run this query on a schedule and get notified when the answer changes")
+                .disabled(!model.canWatch)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
                     ExportMenu()
                 } label: {
                     Label("Copy as", systemImage: "doc.on.doc")
@@ -48,6 +59,9 @@ struct ResultArea: View {
 
     var body: some View {
         Group {
+            if let id = model.selectedWatch {
+                WatchView(id: id)
+            } else {
             switch model.outcome {
             case .none:
                 Placeholder(running: model.isRunning)
@@ -59,10 +73,13 @@ struct ResultArea: View {
                 TraceView(result: r)
             case .email(let r):
                 EmailView(result: r)
+            case .registry(let r):
+                RegistryView(result: r)
+            }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .id(model.resultVersion)
+        .id(model.selectedWatch?.hashValue ?? model.resultVersion)
         .transition(.opacity)
         .modifier(ResultAnimation(value: model.resultVersion))
     }
@@ -111,7 +128,7 @@ enum MarkdownExport {
         case .query(let rs): rows = rs.flatMap(\.message.answer)
         case .trace(let t): rows = t.final.answer
         case .compare(let c): rows = c.results.compactMap(\.message).flatMap(\.answer)
-        case .email: return nil
+        case .email, .registry: return nil
         case nil: return nil
         }
         var s = "| Name | TTL | Type | Data |\n|---|---:|---|---|\n"
