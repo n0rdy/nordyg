@@ -21,15 +21,15 @@ struct QueryResultView: View {
                     CacheAgePill(message: r.message, question: r.questionSent)
                 }
                 SystemViewPill(system: model.systemView, answers: results.flatMap(\.message.addresses))
-                Spacer()
+            }
+            Divider()
+            TabRow {
                 Picker("", selection: $tab) {
                     Text("Records").tag("records")
                     Text("Details").tag("details")
                     Text("DNSSEC").tag("dnssec")
                     Text("Raw").tag("raw")
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 300)
             }
             Divider()
             switch tab {
@@ -75,6 +75,20 @@ struct RecordsView: View {
                 Text(messages.first.map { "\($0.rcode): the server answered, but with no records for this name and type." } ?? "")
             }
         } else {
+            VSplitView {
+                table(rows)
+                    .frame(minHeight: 140, maxHeight: .infinity)
+                if let id = selection, let row = rows.first(where: { $0.id == id }) {
+                    RecordDetail(record: row.record) { selection = nil }
+                        .frame(minHeight: 100, idealHeight: 220, maxHeight: .infinity)
+                }
+            }
+            .onExitCommand { selection = nil }
+        }
+    }
+
+    @ViewBuilder
+    private func table(_ rows: [RecordRow]) -> some View {
             Table(rows, selection: $selection) {
                 TableColumn("Section") { Text($0.section).foregroundStyle(.secondary) }.width(min: 60, ideal: 78, max: 100)
                 TableColumn("Type") { TypeBadge(type: $0.record.type) }.width(min: 60, ideal: 72, max: 110)
@@ -83,7 +97,7 @@ struct RecordsView: View {
                 TableColumn("Data") { row in
                     HStack(spacing: 6) {
                         Text(row.record.rdata).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(.middle)
-                        if row.record.decoded != nil { Image(systemName: "text.magnifyingglass").foregroundStyle(.orange).help("Decoded, see inspector") }
+                        if row.record.decoded != nil { Image(systemName: "text.magnifyingglass").foregroundStyle(.orange).help("Decoded, select the row for details") }
                     }
                 }
             }
@@ -100,12 +114,6 @@ struct RecordsView: View {
             } primaryAction: { ids in
                 if let id = ids.first, let row = rows.first(where: { $0.id == id }), let t = row.record.target { model.resolve(t) }
             }
-            .onChange(of: selection) { _, new in
-                model.selectedRecord = new.flatMap { id in rows.first { $0.id == id }?.record }
-                if new != nil { model.showInspector = true }
-            }
-            .onAppear { model.selectedRecord = nil }
-        }
     }
 }
 

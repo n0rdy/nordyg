@@ -161,7 +161,24 @@ type Result struct {
 }
 
 // DefaultSelectors are tried when the caller gives none.
-var DefaultSelectors = []string{"default", "google", "selector1", "selector2", "k1", "k2", "s1", "s2", "mail", "dkim", "smtp", "mandrill", "pm", "zoho", "protonmail", "fm1", "fm2", "mailjet", "sendgrid", "mailgun"}
+// DefaultSelectors are tried when the caller gives none. Grouped by who uses
+// them; providers with random or date-based selectors (Amazon SES, Postmark)
+// cannot be guessed and need the selector from a real message header.
+var DefaultSelectors = []string{
+	// generic
+	"default", "dkim", "mail", "email", "smtp", "selector", "s", "key1", "key2", "sig1",
+	// Google, Microsoft 365, iCloud (sig1 above)
+	"google", "selector1", "selector2",
+	// mailbox providers
+	"protonmail", "protonmail2", "protonmail3", "fm1", "fm2", "fm3", "zmail", "zoho",
+	// transactional and marketing senders
+	"resend", "s1", "s2", "sendgrid", "k1", "k2", "k3", "mandrill", "mg", "mailgun", "mailo", "pic",
+	"brevo1", "brevo2", "sib", "mailjet", "postmark", "pm", "smtpcom", "smtp2go", "sparkpost", "turbo-smtp",
+	"amazonses", "ses", "cm", "krs", "mesmtp", "mxvault",
+	// CRM, support and security gateways
+	"hs1", "hs2", "hubspot", "zendesk1", "zendesk2", "freshdesk", "ctct1", "ctct2", "everlytickey1", "everlytickey2",
+	"mimecast", "pp1", "barracuda",
+}
 
 // DNSBLZones are queried for every MX IPv4 address.
 var DNSBLZones = []string{"zen.spamhaus.org.", "bl.spamcop.net.", "b.barracudacentral.org."}
@@ -283,7 +300,11 @@ func (r *resolver) lookup(ctx context.Context, name string, t uint16) (*dns.Msg,
 	return res.Msg, nil
 }
 
-// txt returns each TXT record at name joined into one string.
+// txt returns each TXT record the resolver answered with for name, joined
+// into one string. Records are taken from the whole answer section, not only
+// those owned by name, because providers publish DKIM keys and DMARC records
+// behind CNAMEs (Proton, Mailchimp, many DMARC services) and the resolver
+// returns the chased TXT under the target's name.
 func (r *resolver) txt(ctx context.Context, name string) ([]string, error) {
 	m, err := r.lookup(ctx, name, dns.TypeTXT)
 	if err != nil {
@@ -294,7 +315,7 @@ func (r *resolver) txt(ctx context.Context, name string) ([]string, error) {
 	}
 	var out []string
 	for _, rr := range m.Answer {
-		if t, ok := rr.(*dns.TXT); ok && strings.EqualFold(t.Hdr.Name, dns.Fqdn(name)) {
+		if t, ok := rr.(*dns.TXT); ok {
 			out = append(out, strings.Join(t.Txt, ""))
 		}
 	}
@@ -573,7 +594,7 @@ func followIncludes(ctx context.Context, r *resolver, s *txtdecode.SPF, via stri
 
 func checkDKIM(ctx context.Context, r *resolver, domain string, selectors []string) DKIMSection {
 	sec := DKIMSection{Selectors: make([]DKIMSelector, len(selectors))}
-	sem := make(chan struct{}, 6)
+	sem := make(chan struct{}, 8)
 	var wg sync.WaitGroup
 	for i, sel := range selectors {
 		wg.Add(1)

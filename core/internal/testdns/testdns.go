@@ -236,15 +236,29 @@ func Zone(t testing.TB, records ...string) Answer {
 			return m
 		}
 		qq := q.Question[0]
+		name := qq.Name
 		found := false
-		for _, rr := range rrs {
-			h := rr.Header()
-			if strings.EqualFold(h.Name, qq.Name) {
-				found = true
+		// Chase CNAMEs like a recursive resolver would, up to 8 deep.
+		for hop := 0; hop < 8; hop++ {
+			matched := false
+			var cname *dns.CNAME
+			for _, rr := range rrs {
+				h := rr.Header()
+				if !strings.EqualFold(h.Name, name) {
+					continue
+				}
+				found, matched = true, true
 				if h.Rrtype == qq.Qtype || qq.Qtype == dns.TypeANY {
 					m.Answer = append(m.Answer, rr)
+				} else if c, ok := rr.(*dns.CNAME); ok && qq.Qtype != dns.TypeCNAME {
+					cname = c
 				}
 			}
+			if cname == nil || !matched {
+				break
+			}
+			m.Answer = append(m.Answer, cname)
+			name = cname.Target
 		}
 		if !found {
 			m.Rcode = dns.RcodeNameError

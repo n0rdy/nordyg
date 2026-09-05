@@ -43,8 +43,6 @@ final class AppModel: ObservableObject {
     @Published var isRunning = false
     @Published var outcome: Outcome?
     @Published var resultVersion = 0
-    @Published var selectedRecord: Record?
-    @Published var showInspector = false
 
     // Cache visibility
     @Published var authoritative: [String: AuthoritativeAnswer] = [:]
@@ -149,7 +147,6 @@ final class AppModel: ObservableObject {
                 }
                 self.outcome = out
                 self.resultVersion += 1
-                self.selectedRecord = nil
                 self.remember(HistoryItem(name: n, type: mode == .email ? "MAIL" : t, mode: mode.rawValue, endpoint: (mode == .query || mode == .email) ? endpoint : nil))
             } catch is CancellationError {
                 // user cancelled

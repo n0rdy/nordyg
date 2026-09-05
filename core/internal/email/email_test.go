@@ -39,6 +39,10 @@ var good = []string{
 	"_spf.provider.test. 300 IN TXT \"v=spf1 ip4:198.51.100.0/24 include:_spf2.provider.test ~all\"",
 	"_spf2.provider.test. 300 IN TXT \"v=spf1 a mx -all\"",
 	"selector1._domainkey.good.test. 300 IN TXT \"v=DKIM1; k=rsa; p=" + goodKey + "\"",
+	// A provider-hosted key behind a CNAME, and a bare p= record like Resend publishes.
+	"protonmail._domainkey.good.test. 300 IN CNAME protonmail.domainkey.abc.provider.test.",
+	"protonmail.domainkey.abc.provider.test. 300 IN TXT \"v=DKIM1;k=rsa;p=" + goodKey + "\"",
+	"resend._domainkey.good.test. 300 IN TXT \"p=" + goodKey + "\"",
 	"_dmarc.good.test. 300 IN TXT \"v=DMARC1; p=reject; rua=mailto:dmarc@good.test\"",
 	"_mta-sts.good.test. 300 IN TXT \"v=STSv1; id=20260905\"",
 	"mta-sts.good.test. 300 IN A 192.0.2.50",
@@ -96,17 +100,17 @@ func TestGoodDomain(t *testing.T) {
 	if !strings.Contains(res.SPF.Verdict.Message, "5 of 10") {
 		t.Fatal(res.SPF.Verdict.Message)
 	}
-	found := 0
+	var found []string
 	for _, s := range res.DKIM.Selectors {
 		if s.Found {
-			found++
-			if s.Selector != "selector1" || s.Decoded.KeyBits != 2048 {
+			found = append(found, s.Selector)
+			if s.Decoded.KeyBits != 2048 {
 				t.Fatalf("dkim: %+v", s)
 			}
 		}
 	}
-	if found != 1 || res.DKIM.Verdict.Status != OK {
-		t.Fatalf("dkim: %+v", res.DKIM)
+	if strings.Join(found, ",") != "selector1,protonmail,resend" || res.DKIM.Verdict.Status != OK || !strings.Contains(res.DKIM.Verdict.Message, "3 DKIM keys") {
+		t.Fatalf("dkim: found=%v %+v", found, res.DKIM.Verdict)
 	}
 	if res.DMARC.Verdict.Status != OK || res.DMARC.Decoded == nil || *res.DMARC.Decoded.Tags.P != "reject" {
 		t.Fatalf("dmarc: %+v", res.DMARC)

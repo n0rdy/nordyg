@@ -14,12 +14,12 @@
 		28FD7195F45FD6ED7BD75544 /* EmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC5484107ACD135B39E7E13D /* EmailView.swift */; };
 		37DE70F461EACF2170FEFC38 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F8C9238FB7F10930BB8EDDFE /* Assets.xcassets */; };
 		3C83A913246980103EF0641D /* TraceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD7B9BEE151A9DB9A3F7094 /* TraceView.swift */; };
+		820894E762F1EED80DB70068 /* RecordDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B77C6D5F2806DF13D416182 /* RecordDetail.swift */; };
 		8C69467B616CDABBE6E4D918 /* QueryResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CF6A7A69A355276A1A4D3E /* QueryResultView.swift */; };
 		97F294C961493B18A4AF1B0E /* CoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA298458E1FC218F3D43D8F9 /* CoreBridge.swift */; };
 		A094BEA3D065337DBC388D35 /* DetailsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04E9BE2BF54273089464150C /* DetailsView.swift */; };
 		A39E96BE7FDBE0B9F7C3F002 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8D7C6B267CD2CFC21912F6B6 /* SystemConfiguration.framework */; };
 		A68EBB735D368413FE4D2D32 /* DNSSECView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0B9951B7ED27F5CA39F03F /* DNSSECView.swift */; };
-		AF1CB4FA50EEBEC290313992 /* InspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41B4A9109DCAF431DBEDA85 /* InspectorView.swift */; };
 		B6B93EE85E9B297A2BC65A87 /* SystemLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F9A107B146C8BA52FD9D231 /* SystemLookup.swift */; };
 		C5DB41DC623384B4FF764EA3 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD92D60BBA8CD7918A1EBBB6 /* ContentView.swift */; };
 		CB3D2C1089E90722A9FEB10B /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6349ECABD302FD6CD13C3D1A /* HistoryView.swift */; };
@@ -48,6 +48,7 @@
 		6C2E2AD67FA445D256C98277 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		6FD7B9BEE151A9DB9A3F7094 /* TraceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TraceView.swift; sourceTree = "<group>"; };
 		73D887D92E6DD0BA362E5276 /* Nordyg.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Nordyg.entitlements; sourceTree = "<group>"; };
+		7B77C6D5F2806DF13D416182 /* RecordDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordDetail.swift; sourceTree = "<group>"; };
 		8D7C6B267CD2CFC21912F6B6 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
 		9CBC3718CAF2A1B452FF1C10 /* CompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareView.swift; sourceTree = "<group>"; };
 		A2C725578BDAB3F4F7D41862 /* SystemResolvers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemResolvers.swift; sourceTree = "<group>"; };
@@ -57,7 +58,6 @@
 		C111DA1D51ABC444DDD8BBD6 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		CE0B9951B7ED27F5CA39F03F /* DNSSECView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DNSSECView.swift; sourceTree = "<group>"; };
 		D8C87B2C5A32B93139BFA60E /* libnordyg.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = libnordyg.h; sourceTree = "<group>"; };
-		F41B4A9109DCAF431DBEDA85 /* InspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorView.swift; sourceTree = "<group>"; };
 		F8C9238FB7F10930BB8EDDFE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FA298458E1FC218F3D43D8F9 /* CoreBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBridge.swift; sourceTree = "<group>"; };
 		FEE6EDBC45BAE685E6A30F3B /* Contract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Contract.swift; sourceTree = "<group>"; };
@@ -144,9 +144,9 @@
 				CE0B9951B7ED27F5CA39F03F /* DNSSECView.swift */,
 				AC5484107ACD135B39E7E13D /* EmailView.swift */,
 				6349ECABD302FD6CD13C3D1A /* HistoryView.swift */,
-				F41B4A9109DCAF431DBEDA85 /* InspectorView.swift */,
 				57E1032E4B1912602DA8E0F6 /* QueryBar.swift */,
 				A2CF6A7A69A355276A1A4D3E /* QueryResultView.swift */,
+				7B77C6D5F2806DF13D416182 /* RecordDetail.swift */,
 				0C35D0A5583336D66422EB05 /* Style.swift */,
 				6FD7B9BEE151A9DB9A3F7094 /* TraceView.swift */,
 			);
@@ -248,11 +248,11 @@
 				28FD7195F45FD6ED7BD75544 /* EmailView.swift in Sources */,
 				D5481E55DD56C6D970C05D1C /* History.swift in Sources */,
 				CB3D2C1089E90722A9FEB10B /* HistoryView.swift in Sources */,
-				AF1CB4FA50EEBEC290313992 /* InspectorView.swift in Sources */,
 				F5588726D26CDAB2CDCD5B4A /* JSONValue.swift in Sources */,
 				EE94450E7756AFD6937BCDB7 /* NordygApp.swift in Sources */,
 				123BB2C7D292495FBDE1D1FD /* QueryBar.swift in Sources */,
 				8C69467B616CDABBE6E4D918 /* QueryResultView.swift in Sources */,
+				820894E762F1EED80DB70068 /* RecordDetail.swift in Sources */,
 				DC821772277930838732CC4E /* Style.swift in Sources */,
 				B6B93EE85E9B297A2BC65A87 /* SystemLookup.swift in Sources */,
 				F49E1B2B1C820BEA7904E28E /* SystemResolvers.swift in Sources */,

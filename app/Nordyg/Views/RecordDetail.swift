@@ -1,32 +1,32 @@
 import SwiftUI
 
-/// Trailing inspector: details of the selected record.
-struct InspectorView: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        Group {
-            if let rec = model.selectedRecord {
-                RecordDetail(record: rec)
-            } else {
-                ContentUnavailableView("No record selected", systemImage: "sidebar.trailing", description: Text("Select a row to see its fields, decoded TXT data and actions."))
-            }
-        }
-        .navigationTitle("Record")
-    }
-}
-
+/// Detail of the selected record, shown in a resizable pane under the table.
+/// Full window width on purpose: rdata, keys and decoded TXT are wide.
 struct RecordDetail: View {
     @EnvironmentObject var model: AppModel
     var record: Record
+    var close: () -> Void
 
     var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                TypeBadge(type: record.type)
+                Text(record.name).font(.system(.body, design: .monospaced).weight(.semibold)).textSelection(.enabled).lineLimit(1)
+                Spacer()
+                Button { close() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain)
+                    .help("Close (Esc)")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(.bar)
+            Divider()
+            detail
+        }
+    }
+
+    private var detail: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 8) {
-                    TypeBadge(type: record.type)
-                    Text(record.name).font(.system(.body, design: .monospaced).weight(.semibold)).textSelection(.enabled).lineLimit(2)
-                }
+            VStack(alignment: .leading, spacing: 12) {
                 Text(record.rdata).font(.system(.body, design: .monospaced)).textSelection(.enabled)
                     .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.secondary.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 6))
@@ -68,7 +68,7 @@ struct RecordDetail: View {
                 }
                 .buttonStyle(.link)
             }
-            .padding(14)
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

@@ -96,6 +96,16 @@ struct Smoke {
                   "email report decodes (overall \(em.overall.status): mx \(em.mx.verdict.status), spf \(em.spf.totalLookups) lookups \(em.spf.verdict.status), dkim \(em.dkim.verdict.status), dmarc \(em.dmarc.verdict.status), mta-sts \(em.mtaSts.verdict.status), bimi \(em.bimi.verdict.status), dnsbl \(em.dnsbl.verdict.status))")
             print("     \(em.overall.message)")
 
+            // 13c. optional: full report for a domain of your choice.
+            if let dom = ProcessInfo.processInfo.environment["NORDYG_SMOKE_MAIL_DOMAIN"], !dom.isEmpty {
+                let r: EmailResult = try await core.call("email", EmailParams(domain: dom, endpoint: cf, options: Options(), bootstrap: [], extraDkimSelectors: []))
+                print("     \(dom): overall \(r.overall.status) — \(r.overall.message)")
+                for (n, v) in [("mx", r.mx.verdict), ("spf", r.spf.verdict), ("dkim", r.dkim.verdict), ("dmarc", r.dmarc.verdict), ("mta-sts", r.mtaSts.verdict), ("bimi", r.bimi.verdict), ("dnsbl", r.dnsbl.verdict)] {
+                    print("       \(n): \(v.status) — \(v.message)")
+                }
+                for s in r.dkim.selectors where s.found { print("       dkim \(s.selector): \(s.decoded?["key_bits"]?.display ?? "?")-bit \(s.decoded?["key_type"]?.display ?? "")") }
+            }
+
             // 13. the system resolver view (what other apps see) works.
             let seen = await SystemLookup.addresses(for: "cloudflare.com")
             check(!seen.isEmpty && !Set(seen).isDisjoint(with: Set(q.message.addresses)), "Mac's own resolver agrees: \(seen.joined(separator: " "))")

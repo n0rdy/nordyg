@@ -15,13 +15,14 @@ struct TraceView: View {
                 Pill(text: "\(result.hops.count) hops", icon: "point.3.connected.trianglepath.dotted", color: .accentColor, mono: true, help: Glossary.hops)
                 Pill(text: ms(total) + " total", icon: "timer", mono: true, help: Glossary.totalTime)
                 Pill(text: "\(result.final.answer.count) answers", mono: true, help: Glossary.answers)
-                Spacer()
+            }
+            Divider()
+            TabRow {
                 Picker("", selection: $tab) {
                     Text("Path").tag("hops")
                     Text("Final answer").tag("final")
                     Text("DNSSEC").tag("dnssec")
                 }
-                .pickerStyle(.segmented).frame(width: 280)
             }
             Divider()
             switch tab {

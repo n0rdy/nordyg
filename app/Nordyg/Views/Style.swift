@@ -57,6 +57,22 @@ struct Pill: View {
     }
 }
 
+/// A slim row holding the view switcher for a result, kept apart from the
+/// pill strip so neither has to fit the other.
+struct TabRow<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        HStack {
+            content
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            Spacer()
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+    }
+}
+
 /// The row of pills under the command bar summarising a result.
 struct StatusStrip<Content: View>: View {
     @ViewBuilder var content: Content

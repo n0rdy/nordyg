@@ -16,10 +16,6 @@ struct ContentView: View {
                 }
                 ResultArea()
             }
-            .inspector(isPresented: $model.showInspector) {
-                InspectorView()
-                    .inspectorColumnWidth(min: 260, ideal: 340, max: 520)
-            }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -29,15 +25,6 @@ struct ContentView: View {
                     Label("Copy as", systemImage: "doc.on.doc")
                 }
                 .disabled(model.outcome == nil && model.name.isEmpty)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.showInspector.toggle()
-                } label: {
-                    Label("Inspector", systemImage: "sidebar.trailing")
-                }
-                .help("Show or hide the record inspector (⌥⌘I)")
-                .keyboardShortcut("i", modifiers: [.command, .option])
             }
         }
     }
