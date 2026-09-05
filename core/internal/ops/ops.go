@@ -10,6 +10,7 @@ import (
 	"github.com/n0rdy/nordyg/core/internal/bridge"
 	"github.com/n0rdy/nordyg/core/internal/compare"
 	"github.com/n0rdy/nordyg/core/internal/dnssec"
+	"github.com/n0rdy/nordyg/core/internal/email"
 	"github.com/n0rdy/nordyg/core/internal/export"
 	"github.com/n0rdy/nordyg/core/internal/presets"
 	"github.com/n0rdy/nordyg/core/internal/query"
@@ -52,6 +53,7 @@ func NewWith(tc *transport.Client) *bridge.Dispatcher {
 	q.Register(d)
 	(&compare.Op{Query: q}).Register(d)
 	(&trace.Op{Client: tc, Decorate: txtdecode.Decorate, Validator: dnssec.TraceHook{V: v, Client: tc}}).Register(d)
+	(&email.Op{Client: tc}).Register(d)
 	presets.Register(d)
 	export.Register(d)
 	return d

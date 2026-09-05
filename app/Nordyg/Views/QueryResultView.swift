@@ -16,6 +16,11 @@ struct QueryResultView: View {
                 Pill(text: r.exchange.endpoint.title, icon: "server.rack", help: Glossary.server + " " + r.exchange.endpoint.summary)
                 Pill(text: "\(r.message.sizeBytes) B", mono: true, help: Glossary.size)
                 Pill(text: r.message.flags.set.joined(separator: " "), mono: true, help: Glossary.flags(r.message.flags.set))
+                if r.message.isStale { StalePill() }
+                if results.count == 1, r.message.rcode == "NOERROR", r.exchange.endpoint.transport != "" {
+                    CacheAgePill(message: r.message, question: r.questionSent)
+                }
+                SystemViewPill(system: model.systemView, answers: results.flatMap(\.message.addresses))
                 Spacer()
                 Picker("", selection: $tab) {
                     Text("Records").tag("records")

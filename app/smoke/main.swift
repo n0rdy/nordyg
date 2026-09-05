@@ -89,6 +89,16 @@ struct Smoke {
             // 12. system resolvers are discoverable from the sandbox-safe API.
             let sys = SystemResolvers.endpoints()
             check(!sys.isEmpty, "system resolvers found: \(sys.map { $0.address ?? "?" }.joined(separator: " "))")
+
+            // 13b. email report for a real, well-configured mail domain.
+            let em: EmailResult = try await core.call("email", EmailParams(domain: "cloudflare.com", endpoint: cf, options: Options(), bootstrap: [], extraDkimSelectors: []))
+            check(em.mx.verdict.status != "fail" && em.spf.verdict.status != "fail" && em.dmarc.verdict.status == "ok" && em.spf.totalLookups > 0,
+                  "email report decodes (overall \(em.overall.status): mx \(em.mx.verdict.status), spf \(em.spf.totalLookups) lookups \(em.spf.verdict.status), dkim \(em.dkim.verdict.status), dmarc \(em.dmarc.verdict.status), mta-sts \(em.mtaSts.verdict.status), bimi \(em.bimi.verdict.status), dnsbl \(em.dnsbl.verdict.status))")
+            print("     \(em.overall.message)")
+
+            // 13. the system resolver view (what other apps see) works.
+            let seen = await SystemLookup.addresses(for: "cloudflare.com")
+            check(!seen.isEmpty && !Set(seen).isDisjoint(with: Set(q.message.addresses)), "Mac's own resolver agrees: \(seen.joined(separator: " "))")
         }
 
         print("smoke passed")

@@ -271,3 +271,102 @@ enum Glossary {
         }
     }
 }
+
+/// Pill showing how old a resolver's copy is, with a button to find out.
+struct CacheAgePill: View {
+    @EnvironmentObject var model: AppModel
+    var message: Message
+    var question: Question
+
+    var body: some View {
+        switch model.cacheAge(of: message, question: question) {
+        case .unknown:
+            Button { model.fetchAuthoritative(for: question) } label: {
+                Pill(text: "cache age?", icon: "questionmark.circle", help: Glossary.cacheUnknown)
+            }
+            .buttonStyle(.plain)
+        case .checking:
+            Pill(text: "checking…", icon: "hourglass", help: Glossary.cacheChecking)
+        case .fresh:
+            Pill(text: "fresh", icon: "sparkles", color: .green, help: Glossary.cacheFresh)
+        case .cached(let s):
+            Pill(text: "cached \(age(s)) ago", icon: "clock.arrow.circlepath", color: s > 300 ? .orange : .secondary, help: Glossary.cacheAge(s))
+        case .differs:
+            Pill(text: "differs from authoritative", icon: "exclamationmark.triangle.fill", color: .orange, help: Glossary.cacheDiffers)
+        }
+    }
+
+    func age(_ s: Int) -> String {
+        if s < 60 { return "\(s) s" }
+        if s < 3600 { return "\(s / 60) min" }
+        if s < 86400 { return String(format: "%.1f h", Double(s) / 3600) }
+        return String(format: "%.1f d", Double(s) / 86400)
+    }
+}
+
+struct StalePill: View {
+    var body: some View { Pill(text: "stale", icon: "exclamationmark.arrow.circlepath", color: .orange, help: Glossary.stale) }
+}
+
+/// What this Mac's own resolver returns, next to what Nordyg got.
+struct SystemViewPill: View {
+    var system: [String]?
+    var answers: [String]
+
+    var body: some View {
+        if let system {
+            let overlap = !Set(system).isDisjoint(with: Set(answers))
+            let color: Color = system.isEmpty ? .secondary : (overlap ? .green : .orange)
+            Pill(text: system.isEmpty ? "Mac sees nothing" : (overlap ? "Mac agrees" : "Mac sees different"),
+                 icon: "desktopcomputer", color: color,
+                 help: Glossary.systemView(system, overlap: overlap))
+        }
+    }
+}
+
+extension Glossary {
+    static let cacheUnknown = "Click to find out how old this resolver's copy is. Nordyg fetches the authoritative answer with a trace and compares TTLs; the difference is the time the record has sat in the resolver's cache."
+    static let cacheChecking = "Tracing to the authoritative server to learn the original TTL…"
+    static let cacheFresh = "The TTL matches the authoritative one: the resolver fetched this answer just now, not from its cache."
+    static func cacheAge(_ s: Int) -> String { "The resolver returned a TTL \(s) s lower than the authoritative server publishes, so this copy has been in its cache about that long. Changes made since then are not visible through this resolver until the TTL runs out." }
+    static let cacheDiffers = "The resolver's answer contains data the authoritative server does not currently publish, or a TTL higher than the original. Either a change is still propagating, the resolver overrides or filters this name, or it serves a geographic variant."
+    static let stale = "The resolver flagged this answer as stale (Extended DNS Error 3, RFC 8767): it is past its TTL and was served because a fresh fetch failed or is still in progress."
+    static func systemView(_ addrs: [String], overlap: Bool) -> String {
+        let list = addrs.isEmpty ? "nothing" : addrs.joined(separator: ", ")
+        return "What this Mac's own resolver (mDNSResponder) returns for the name right now: \(list).\nEvery ordinary app, Safari included, uses that cache. Nordyg queries resolvers directly and bypasses it." + (overlap ? "" : "\nThe Mac sees something different from this answer: its cache is stale, or it uses another resolver.")
+    }
+}
+
+enum VerdictStyle {
+    static func color(_ status: String) -> Color {
+        switch status {
+        case "ok": return .green
+        case "warn": return .orange
+        case "fail": return .red
+        default: return .secondary
+        }
+    }
+    static func icon(_ status: String) -> String {
+        switch status {
+        case "ok": return "checkmark.circle.fill"
+        case "warn": return "exclamationmark.triangle.fill"
+        case "fail": return "xmark.octagon.fill"
+        default: return "info.circle"
+        }
+    }
+    static func label(_ status: String) -> String {
+        switch status {
+        case "ok": return "OK"
+        case "warn": return "warning"
+        case "fail": return "failing"
+        default: return "info"
+        }
+    }
+}
+
+struct VerdictPill: View {
+    var verdict: Verdict
+    var body: some View {
+        Pill(text: VerdictStyle.label(verdict.status), icon: VerdictStyle.icon(verdict.status), color: VerdictStyle.color(verdict.status), help: verdict.message)
+    }
+}

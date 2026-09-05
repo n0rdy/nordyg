@@ -13,20 +13,22 @@ struct QueryBar: View {
             HStack(spacing: 10) {
                 HStack(spacing: 0) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary).padding(.leading, 10).padding(.trailing, 6)
-                    TextField("name or IP address", text: $model.name)
+                    TextField(model.mode == .email ? "mail domain" : "name or IP address", text: $model.name)
                         .textFieldStyle(.plain)
                         .font(.system(.title3, design: .monospaced))
                         .focused($nameFocused)
                         .onSubmit { model.run() }
-                    Token {
-                        Picker("Type", selection: $model.type) {
-                            ForEach(RecordTypes.all, id: \.self) { Text($0).tag($0) }
+                    if model.mode != .email {
+                        Token {
+                            Picker("Type", selection: $model.type) {
+                                ForEach(RecordTypes.all, id: \.self) { Text($0).tag($0) }
+                            }
+                            .pickerStyle(.inline)
+                        } label: {
+                            Text(model.type).font(.system(.callout, design: .monospaced).weight(.bold)).foregroundStyle(TypeStyle.color(model.type))
                         }
-                        .pickerStyle(.inline)
-                    } label: {
-                        Text(model.type).font(.system(.callout, design: .monospaced).weight(.bold)).foregroundStyle(TypeStyle.color(model.type))
                     }
-                    if model.mode == .query {
+                    if model.mode == .query || model.mode == .email {
                         Token {
                             EndpointPickerItems(selection: $model.selected)
                         } label: {
@@ -61,11 +63,18 @@ struct QueryBar: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 240)
+                .frame(width: 320)
                 Text(modeHint).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 if model.isRunning { ProgressView().controlSize(.small) }
-                if model.mode != .compare {
+                if model.mode == .email {
+                    TextField("DKIM selector (optional)", text: $model.dkimSelector)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.callout, design: .monospaced))
+                        .frame(width: 200)
+                        .help("The selector your mail provider uses, from the s= tag of a DKIM-Signature header. Common ones are tried automatically.")
+                }
+                if model.mode == .query || model.mode == .trace {
                     Toggle("Validate DNSSEC", isOn: $model.validate).toggleStyle(.checkbox)
                 }
                 Button { showCustom = true } label: { Label("Resolver", systemImage: "plus") }
@@ -86,6 +95,7 @@ struct QueryBar: View {
         case .query: return "one resolver, full detail"
         case .compare: return "several resolvers at once, differences highlighted"
         case .trace: return "follow delegations from the root servers"
+        case .email: return "MX, SPF, DKIM, DMARC, MTA-STS, BIMI and blocklists, with verdicts"
         }
     }
 }

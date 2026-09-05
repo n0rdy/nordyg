@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CompareView: View {
+    @EnvironmentObject var model: AppModel
     var result: CompareResult
 
     var body: some View {
@@ -26,6 +27,18 @@ struct CompareView: View {
                 CompareGrid(result: result)
                     .padding(16)
             }
+            if !result.consistent {
+                Divider()
+                HStack(spacing: 12) {
+                    Image(systemName: "info.circle").foregroundStyle(.secondary)
+                    Text("Resolvers disagree. If one is holding an old copy, the operator's purge page clears it:")
+                    Link("Cloudflare", destination: URL(string: "https://one.one.one.one/purge-cache/")!)
+                    Link("Google", destination: URL(string: "https://developers.google.com/speed/public-dns/cache")!)
+                    Spacer()
+                }
+                .font(.callout)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+            }
         }
     }
 }
@@ -33,6 +46,7 @@ struct CompareView: View {
 /// Resolvers as rows, distinct answer values as columns. A filled cell means
 /// the resolver returned that value; row colour follows its group.
 struct CompareGrid: View {
+    @EnvironmentObject var model: AppModel
     var result: CompareResult
 
     /// Distinct answer values across all groups, largest group first.
@@ -63,6 +77,7 @@ struct CompareGrid: View {
                 Text("Rcode").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Text("Time").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Text("TTL").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text("Cache").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 ForEach(cols, id: \.self) { c in
                     Text(c).font(.system(.caption, design: .monospaced).weight(.semibold)).lineLimit(1).truncationMode(.middle).frame(maxWidth: 200)
                 }
@@ -80,6 +95,14 @@ struct CompareGrid: View {
                     if let m = e.message { RcodeBadge(rcode: m.rcode) } else { Pill(text: e.error?.code ?? "error", color: .red, mono: true) }
                     Text(e.exchange.map { ms($0.rttMs) } ?? "—").font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
                     Text(e.message?.answer.first.map { "\($0.ttl)" } ?? "—").font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+                    if let m = e.message, m.rcode == "NOERROR" {
+                        HStack(spacing: 4) {
+                            CacheAgePill(message: m, question: result.questionSent)
+                            if m.isStale { StalePill() }
+                        }
+                    } else {
+                        Text("—").foregroundStyle(.secondary)
+                    }
                     ForEach(cols, id: \.self) { col in
                         let has = e.message?.answer.contains { $0.rdata == col } ?? false
                         ZStack {
@@ -92,7 +115,7 @@ struct CompareGrid: View {
                 if let err = e.error {
                     GridRow {
                         Text(err.message).font(.caption).foregroundStyle(.red).lineLimit(2)
-                            .gridCellColumns(4 + cols.count)
+                            .gridCellColumns(5 + cols.count)
                     }
                 }
             }

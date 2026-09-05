@@ -264,9 +264,50 @@ struct ExportResult: Codable { var command: String }
 
 struct PingResult: Codable { var contractVersion: Int; var version: String; var ops: [String] }
 
+// MARK: email
+
+struct EmailParams: Codable {
+    var domain: String
+    var endpoint: Endpoint
+    var options: Options
+    var bootstrap: [Endpoint]
+    var extraDkimSelectors: [String]
+}
+struct Verdict: Codable, Hashable { var status: String; var message: String }
+struct PTRCheck: Codable, Hashable { var ip: String; var names: [String]; var matches: Bool; var error: String? }
+struct MXHost: Codable, Hashable { var preference: Int; var exchange: String; var addresses: [String]; var ptr: [PTRCheck]; var error: String? }
+struct MXSection: Codable, Hashable { var hosts: [MXHost]; var nullMx: Bool; var implicit: Bool; var verdict: Verdict }
+struct SPFInclude: Codable, Hashable { var name: String; var via: String; var depth: Int; var record: String?; var decoded: JSONValue?; var lookups: Int; var error: String? }
+struct SPFSection: Codable, Hashable { var records: [String]; var decoded: JSONValue?; var includes: [SPFInclude]; var totalLookups: Int; var verdict: Verdict }
+struct DKIMSelector: Codable, Hashable { var selector: String; var name: String; var found: Bool; var record: String?; var decoded: JSONValue? }
+struct DKIMSection: Codable, Hashable { var selectors: [DKIMSelector]; var verdict: Verdict }
+struct DMARCSection: Codable, Hashable { var name: String; var records: [String]; var decoded: JSONValue?; var verdict: Verdict }
+struct MTASTSPolicy: Codable, Hashable { var version: String; var mode: String; var mx: [String]; var maxAge: Int }
+struct MTASTSSection: Codable, Hashable { var name: String; var record: String?; var id: String?; var policyUrl: String?; var policyText: String?; var policy: MTASTSPolicy?; var error: String?; var verdict: Verdict }
+struct BIMISection: Codable, Hashable { var name: String; var record: String?; var logo: String?; var evidence: String?; var verdict: Verdict }
+struct DNSBLCheck: Codable, Hashable { var ip: String; var zone: String; var listed: Bool; var blocked: Bool; var response: String?; var error: String? }
+struct DNSBLSection: Codable, Hashable { var checks: [DNSBLCheck]; var verdict: Verdict }
+struct EmailResult: Codable, Hashable {
+    var domain: String
+    var mx: MXSection
+    var spf: SPFSection
+    var dkim: DKIMSection
+    var dmarc: DMARCSection
+    var mtaSts: MTASTSSection
+    var bimi: BIMISection
+    var dnsbl: DNSBLSection
+    var overall: Verdict
+}
+
 /// Record types offered in the picker. "ALL" is a shell-side fan-out.
 enum RecordTypes {
     static let common = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SOA", "PTR", "SRV", "CAA", "DS", "DNSKEY", "TLSA", "HTTPS", "SVCB", "NAPTR", "ANY"]
     static let fanOut = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SOA", "CAA", "HTTPS"]
     static let all = ["ALL"] + common
+}
+
+extension Message {
+    /// RFC 8767: the resolver served this answer past its TTL and said so.
+    var isStale: Bool { edns?.options.contains { $0.ede?.infoCode == 3 } ?? false }
+    var addresses: [String] { answer.compactMap { ($0.type == "A" || $0.type == "AAAA") ? $0.rdata : nil } }
 }

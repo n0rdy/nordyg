@@ -2,13 +2,14 @@ import Foundation
 import SwiftUI
 
 enum Mode: String, CaseIterable, Identifiable {
-    case query, compare, trace
+    case query, compare, trace, email
     var id: String { rawValue }
     var title: String {
         switch self {
         case .query: return "Query"
         case .compare: return "Compare"
         case .trace: return "Trace"
+        case .email: return "Email"
         }
     }
 }
@@ -17,6 +18,7 @@ enum Outcome {
     case query([QueryResult])
     case compare(CompareResult)
     case trace(TraceResult)
+    case email(EmailResult)
 }
 
 @MainActor
@@ -29,6 +31,7 @@ final class AppModel: ObservableObject {
     @Published var compareSelection: Set<Endpoint> = []
     @Published var validate = true
     @Published var options = Options()
+    @Published var dkimSelector = ""
 
     // Choices
     @Published var systemEndpoints: [Endpoint] = []
@@ -42,6 +45,11 @@ final class AppModel: ObservableObject {
     @Published var resultVersion = 0
     @Published var selectedRecord: Record?
     @Published var showInspector = false
+
+    // Cache visibility
+    @Published var authoritative: [String: AuthoritativeAnswer] = [:]
+    @Published var fetchingAuthoritative: Set<String> = []
+    @Published var systemView: [String]?
     @Published var errorMessage: String?
     @Published var history: [HistoryItem] = HistoryStore.load()
 
@@ -85,7 +93,7 @@ final class AppModel: ObservableObject {
         let n = name.trimmingCharacters(in: .whitespaces)
         if n.isEmpty || isRunning { return false }
         switch mode {
-        case .query: return selected != nil
+        case .query, .email: return selected != nil
         case .compare: return !compareSelection.isEmpty
         case .trace: return true
         }
@@ -96,7 +104,8 @@ final class AppModel: ObservableObject {
         let n = name.trimmingCharacters(in: .whitespaces)
         var t = type
         // Typing an IP address means a reverse lookup unless a type was chosen deliberately.
-        if t == "A" || t == "ALL", isIPAddress(n) { t = "PTR"; type = "PTR" }
+        if mode != .email, t == "A" || t == "ALL", isIPAddress(n) { t = "PTR"; type = "PTR" }
+        let selector = dkimSelector.trimmingCharacters(in: .whitespaces)
         let question = Question(name: n, type: t, qclass: nil)
         let mode = self.mode
         let endpoint = selected
@@ -107,6 +116,13 @@ final class AppModel: ObservableObject {
 
         errorMessage = nil
         isRunning = true
+        systemView = nil
+        if mode == .query, ["A", "AAAA", "ALL"].contains(t) {
+            Task { [weak self] in
+                let addrs = await SystemLookup.addresses(for: n)
+                await MainActor.run { self?.systemView = addrs }
+            }
+        }
         task = Task { [weak self] in
             guard let self else { return }
             do {
@@ -126,11 +142,15 @@ final class AppModel: ObservableObject {
                 case .trace:
                     let r: TraceResult = try await self.core.call("trace", TraceParams(question: question, options: opts, validate: validate, bootstrap: boot, rootHints: nil))
                     out = .trace(r)
+                case .email:
+                    guard let endpoint else { return }
+                    let r: EmailResult = try await self.core.call("email", EmailParams(domain: n, endpoint: endpoint, options: opts, bootstrap: boot, extraDkimSelectors: selector.isEmpty ? [] : [selector]))
+                    out = .email(r)
                 }
                 self.outcome = out
                 self.resultVersion += 1
                 self.selectedRecord = nil
-                self.remember(HistoryItem(name: n, type: t, mode: mode.rawValue, endpoint: mode == .query ? endpoint : nil))
+                self.remember(HistoryItem(name: n, type: mode == .email ? "MAIL" : t, mode: mode.rawValue, endpoint: (mode == .query || mode == .email) ? endpoint : nil))
             } catch is CancellationError {
                 // user cancelled
             } catch let e as CoreError {
@@ -160,6 +180,48 @@ final class AppModel: ObservableObject {
         task?.cancel()
     }
 
+    // MARK: cache visibility
+
+    static func authKey(_ q: Question) -> String {
+        "\(q.name.lowercased().hasSuffix(".") ? q.name.lowercased() : q.name.lowercased() + ".")|\(q.type.uppercased())"
+    }
+
+    /// Fetches the authoritative answer with a silent trace, so cache age can
+    /// be computed as authoritative TTL minus returned TTL.
+    func fetchAuthoritative(for q: Question) {
+        let key = Self.authKey(q)
+        guard !fetchingAuthoritative.contains(key) else { return }
+        fetchingAuthoritative.insert(key)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.fetchingAuthoritative.remove(key) }
+            do {
+                let r: TraceResult = try await self.core.call("trace", TraceParams(question: Question(name: q.name, type: q.type, qclass: nil), options: Options(timeoutMs: 4000), validate: false, bootstrap: [], rootHints: nil))
+                var ttls: [String: Int] = [:]
+                for rec in r.final.answer where rec.type.uppercased() == q.type.uppercased() { ttls[rec.rdata] = rec.ttl }
+                self.authoritative[key] = AuthoritativeAnswer(ttls: ttls, rcode: r.final.rcode, fetched: Date(), server: r.hops.last?.server.name ?? "")
+            } catch let e as CoreError {
+                self.errorMessage = "Authoritative lookup failed: \(e.message)"
+            } catch {}
+        }
+    }
+
+    func cacheAge(of message: Message, question: Question) -> CacheAge {
+        let key = Self.authKey(question)
+        if fetchingAuthoritative.contains(key) { return .checking }
+        guard let auth = authoritative[key] else { return .unknown }
+        let answers = message.answer.filter { $0.type.uppercased() == question.type.uppercased() }
+        if answers.isEmpty { return auth.ttls.isEmpty ? .fresh : .differs }
+        var ages: [Int] = []
+        for a in answers {
+            if let t = auth.ttls[a.rdata] { ages.append(t - a.ttl) }
+        }
+        if ages.isEmpty { return .differs }
+        let age = ages.max() ?? 0
+        if age < -1 { return .differs }
+        return age <= 2 ? .fresh : .cached(age)
+    }
+
     /// Fill the form from a record target and run again (the "click an MX
     /// target to resolve inline" action).
     func resolve(_ target: String, type: String = "A") {
@@ -171,7 +233,7 @@ final class AppModel: ObservableObject {
 
     func rerun(_ item: HistoryItem) {
         name = item.name
-        type = item.type
+        if item.type != "MAIL" { type = item.type }
         mode = Mode(rawValue: item.mode) ?? .query
         if let ep = item.endpoint { selected = ep }
         run()
@@ -203,6 +265,7 @@ final class AppModel: ObservableObject {
         case .query(let r): data = r.count == 1 ? try? enc.encode(r[0]) : try? enc.encode(r)
         case .compare(let r): data = try? enc.encode(r)
         case .trace(let r): data = try? enc.encode(r)
+        case .email(let r): data = try? enc.encode(r)
         case nil: data = nil
         }
         return data.flatMap { String(data: $0, encoding: .utf8) }
@@ -240,4 +303,15 @@ final class AppModel: ObservableObject {
 func isIPAddress(_ s: String) -> Bool {
     var v4 = in_addr(); var v6 = in6_addr()
     return inet_pton(AF_INET, s, &v4) == 1 || inet_pton(AF_INET6, s, &v6) == 1
+}
+
+struct AuthoritativeAnswer {
+    var ttls: [String: Int]   // rdata → TTL as published by the authoritative server
+    var rcode: String
+    var fetched: Date
+    var server: String
+}
+
+enum CacheAge: Equatable {
+    case unknown, checking, fresh, cached(Int), differs
 }

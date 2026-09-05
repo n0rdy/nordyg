@@ -70,6 +70,8 @@ struct ResultArea: View {
                 CompareView(result: r)
             case .trace(let r):
                 TraceView(result: r)
+            case .email(let r):
+                EmailView(result: r)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -122,6 +124,7 @@ enum MarkdownExport {
         case .query(let rs): rows = rs.flatMap(\.message.answer)
         case .trace(let t): rows = t.final.answer
         case .compare(let c): rows = c.results.compactMap(\.message).flatMap(\.answer)
+        case .email: return nil
         case nil: return nil
         }
         var s = "| Name | TTL | Type | Data |\n|---|---:|---|---|\n"
