@@ -19,6 +19,7 @@
 		8C69467B616CDABBE6E4D918 /* QueryResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CF6A7A69A355276A1A4D3E /* QueryResultView.swift */; };
 		97F294C961493B18A4AF1B0E /* CoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA298458E1FC218F3D43D8F9 /* CoreBridge.swift */; };
 		A094BEA3D065337DBC388D35 /* DetailsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04E9BE2BF54273089464150C /* DetailsView.swift */; };
+		A25AC623924276512ACA2A23 /* AboutPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FCABDBC6B8CE24C9335F141 /* AboutPanel.swift */; };
 		A39E96BE7FDBE0B9F7C3F002 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8D7C6B267CD2CFC21912F6B6 /* SystemConfiguration.framework */; };
 		A68EBB735D368413FE4D2D32 /* DNSSECView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0B9951B7ED27F5CA39F03F /* DNSSECView.swift */; };
 		AA2CD3C6424EF46CD673FB62 /* WatchCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06FA671494916709A42DAF73 /* WatchCenter.swift */; };
@@ -58,6 +59,7 @@
 		85317044D794DF2935CD0676 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		8691B7565317767E3CA6034C /* WatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchView.swift; sourceTree = "<group>"; };
 		8D7C6B267CD2CFC21912F6B6 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
+		8FCABDBC6B8CE24C9335F141 /* AboutPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutPanel.swift; sourceTree = "<group>"; };
 		9CBC3718CAF2A1B452FF1C10 /* CompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareView.swift; sourceTree = "<group>"; };
 		A2C725578BDAB3F4F7D41862 /* SystemResolvers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemResolvers.swift; sourceTree = "<group>"; };
 		A2CF6A7A69A355276A1A4D3E /* QueryResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryResultView.swift; sourceTree = "<group>"; };
@@ -167,6 +169,7 @@
 		F08CF871BC88F03299B8D696 /* Nordyg */ = {
 			isa = PBXGroup;
 			children = (
+				8FCABDBC6B8CE24C9335F141 /* AboutPanel.swift */,
 				85317044D794DF2935CD0676 /* AppIcon.icon */,
 				F8C9238FB7F10930BB8EDDFE /* Assets.xcassets */,
 				2F3EF3B2BD66623456A4D7ED /* Info.plist */,
@@ -251,6 +254,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A25AC623924276512ACA2A23 /* AboutPanel.swift in Sources */,
 				0FFCEB4EA38630BDB4AA47A3 /* AppModel.swift in Sources */,
 				D7F96C26DCBBB7B059530FC9 /* CompareView.swift in Sources */,
 				C5DB41DC623384B4FF764EA3 /* ContentView.swift in Sources */,

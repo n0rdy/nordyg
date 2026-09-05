@@ -20,6 +20,15 @@ struct NordygApp: App {
         }
         .menuBarExtraStyle(.window)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Nordyg") { AboutPanel.show() }
+            }
+            CommandGroup(replacing: .help) {
+                Button("Docs") { NSWorkspace.shared.open(Links.docs) }
+                Button("Ask a question or report a bug") { NSWorkspace.shared.open(Links.discussions) }
+                Divider()
+                Button("Source code") { NSWorkspace.shared.open(Links.source) }
+            }
             CommandGroup(replacing: .newItem) {}
             CommandMenu("Query") {
                 Button("Run") { model.run() }.keyboardShortcut(.return, modifiers: .command).disabled(!model.canRun)
