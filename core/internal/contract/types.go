@@ -1,5 +1,5 @@
 // Package contract holds the JSON types shared by every op, mirroring
-// docs/contract.md §2. Keep field names and semantics in sync with that file.
+// context/contract.md §2. Keep field names and semantics in sync with that file.
 package contract
 
 import (

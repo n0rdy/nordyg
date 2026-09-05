@@ -1,0 +1,25 @@
+/* Brand tokens sampled from the logo (app/design). The logo is the source of
+   truth: azure accent, near-black tile. Keep in sync with the app's accent
+   colour in app/Nordyg/Assets.xcassets. */
+:root {
+  --nordyg-azure: #1a7fe8;
+  --nordyg-azure-bright: #2fa8ff;
+  --nordyg-cyan: #01f8ff;
+  --nordyg-ink: #141c26;
+
+  /* Starlight accent palette (light) */
+  --sl-color-accent-low: #d6e9ff;
+  --sl-color-accent: var(--nordyg-azure);
+  --sl-color-accent-high: #0b4b95;
+}
+
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #0c2a4d;
+  --sl-color-accent: var(--nordyg-azure-bright);
+  --sl-color-accent-high: #bfe3ff;
+  --sl-color-bg: #0f151d;
+  --sl-color-bg-nav: #141c26;
+  --sl-color-bg-sidebar: #121a23;
+}
+
+.site-title img { height: 2.25rem; width: auto; border-radius: 8px; }

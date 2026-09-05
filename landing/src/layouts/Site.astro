@@ -1,0 +1,68 @@
+---
+import '../styles/site.css';
+interface Props { title: string; description: string; }
+const { title, description } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content="https://nordyg.com/logo.png" />
+    <meta name="twitter:card" content="summary" />
+    <link rel="preload" as="image" href="/logo-96.png" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="wrap">
+        <a class="brand" href="/"><img src="/logo-96.png" alt="" width="40" height="40" />Nordyg</a>
+        <nav class="nav" aria-label="Site">
+          <a href="/docs/">Docs</a>
+          <a href="https://github.com/n0rdy/nordyg">GitHub</a>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="footer">
+      <div class="wrap">
+        <div class="cols">
+          <div>
+            <h3>Nordyg</h3>
+            <p>A native macOS app for DNS. I make it in Norway and it's open source under the AGPL-3.0.</p>
+          </div>
+          <div>
+            <h3>Links</h3>
+            <ul>
+              <li><a href="/docs/">Documentation</a></li>
+              <li><a href="https://github.com/n0rdy/nordyg">Source on GitHub</a></li>
+              <li><a href="https://github.com/n0rdy/nordyg/discussions">Questions and bugs</a></li>
+              <li><a href="/privacy/">Privacy</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3>More by me</h3>
+            <ul>
+              <li><a href="https://retrek.me">reTrek</a></li>
+              <li><a href="https://tenbreaths.app">Ten Breaths</a></li>
+              <li><a href="https://pooml.com">pooml</a></li>
+              <li><a href="https://forq.sh">forq</a></li>
+              <li><a href="https://n0rdy.foo">n0rdy.foo</a></li>
+            </ul>
+          </div>
+        </div>
+        <p class="legal">Copyright {new Date().getFullYear()} Do Not Panic AS.<br />Apple, macOS and the Mac App Store are trademarks of Apple Inc.</p>
+      </div>
+    </footer>
+  </body>
+</html>

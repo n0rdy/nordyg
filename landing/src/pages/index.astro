@@ -1,0 +1,169 @@
+---
+import Site from '../layouts/Site.astro';
+import Shot from '../components/Shot.astro';
+
+// App Store link: replace with the real product URL once the listing exists.
+const appStore = 'https://apps.apple.com/app/nordyg/id0000000000';
+const price = '$9.99';
+const source = 'https://github.com/n0rdy/nordyg';
+---
+<Site title="Nordyg, a native DNS client for macOS" description="Query any resolver over UDP, TCP, DoT, DoH or DoQ, validate DNSSEC yourself, compare answers, trace delegations, check mail and registry records. Open source, on the Mac App Store.">
+
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <h1>Ask the DNS. See everything it says back.</h1>
+        <p class="lede">Nordyg is a native Mac app that replaces dig and the web checkers. Any resolver, every transport, DNSSEC validated on your own machine, and the answers laid out so you can read them.</p>
+        <div class="actions">
+          <a class="btn" href={appStore}>Buy on the Mac App Store <span class="price">{price}</span></a>
+          <a class="btn" href={source}>Build from source</a>
+        </div>
+        <p class="note">Same app either way. The source is open under the AGPL-3.0. The App Store build is signed, notarized and updates itself.</p>
+      </div>
+      <div class="glow">
+        <Shot label="Query: cloudflare.com A" detail="The DNSSEC tab with the chain of trust drawn as connected nodes, root to zone, every link green." />
+      </div>
+    </div>
+  </section>
+
+  <section class="feature">
+    <div class="wrap">
+      <div class="copy">
+        <h2>Every bit the wire returned</h2>
+        <p>Flags, all three sections, EDNS options including extended error codes, message size, round-trip time and the TLS session for encrypted transports. A raw dig-style view for the ticket.</p>
+        <ul>
+          <li>Typed fields for every common record, DNSSEC types, HTTPS and SVCB included.</li>
+          <li>Unknown types shown as hex, never as an error.</li>
+          <li>SPF, DMARC and DKIM decoded in place, with problems flagged.</li>
+          <li>Copy any query as the equivalent dig, nslookup, doggo or curl command.</li>
+        </ul>
+      </div>
+      <Shot label="Query: records table" detail="A TXT lookup with the SPF record selected and its decoded mechanisms and lookup count in the detail pane." />
+    </div>
+  </section>
+
+  <section class="feature">
+    <div class="wrap">
+      <div class="copy">
+        <h2>A chain of trust you can read</h2>
+        <p>Nordyg validates DNSSEC itself, from the root trust anchors down, and never takes a resolver's word for it. Both root keys ship with the app, so the October 2026 rollover changes nothing for you.</p>
+        <ul>
+          <li>Each zone in the chain with its keys, DS records and signatures, and why a link failed.</li>
+          <li>Unsigned domains are called unsigned, not insecure.</li>
+          <li>Expired signatures, mismatched DS records and stripped answers show up as bogus with the reason.</li>
+        </ul>
+      </div>
+      <Shot label="DNSSEC: bogus chain" detail="A domain with an expired signature: root and TLD green, the zone red, the reason under it." />
+    </div>
+  </section>
+
+  <section class="feature">
+    <div class="wrap">
+      <div class="copy">
+        <h2>Who says what, and where it comes from</h2>
+        <p>Compare asks several resolvers at once and lays the answers out as a grid, so the one holding a stale copy is obvious. Trace follows a delegation from the root servers down, one hop per server, with latency and the DS handoff at each step.</p>
+        <ul>
+          <li>Cache age per resolver, measured against the authoritative TTL.</li>
+          <li>Stale answers flagged when a resolver admits to them.</li>
+          <li>What your Mac's own resolver sees, next to what Nordyg got.</li>
+        </ul>
+      </div>
+      <Shot label="Compare: four resolvers" detail="The resolver-by-answer grid during a migration, three resolvers on the new address and one still cached on the old." />
+    </div>
+  </section>
+
+  <section class="feature">
+    <div class="wrap">
+      <div class="copy">
+        <h2>The mail checks, without the SaaS</h2>
+        <p>One domain, one report: MX hosts with their reverse records, SPF with the include chain actually followed and the real lookup count, DKIM across the common selectors plus yours, DMARC, MTA-STS with the policy fetched, BIMI, and the major blocklists. Each line gets a verdict.</p>
+      </div>
+      <Shot label="Email: report" detail="The report for a domain with SPF at seven of ten lookups and a p=none DMARC policy, both warnings open." />
+    </div>
+  </section>
+
+  <section class="feature">
+    <div class="wrap">
+      <div class="copy">
+        <h2>Who owns it, and when it changes</h2>
+        <p>Registry mode shows the registrar, the dates, the lock statuses explained in plain words, and whether the nameservers on file match the ones the zone publishes, via RDAP, or WHOIS where a country-code registry still uses it.</p>
+        <ul>
+          <li>Watch a name on a schedule and get a notification when the answer changes.</li>
+          <li>A change log with the old and new answers side by side.</li>
+          <li>Watches live in the menu bar and survive restarts.</li>
+        </ul>
+      </div>
+      <Shot label="Watch: change log" detail="A watch on an A record during a cutover, the timeline showing the moment the address changed." />
+    </div>
+  </section>
+
+  <section class="built">
+    <div class="wrap">
+      <h2>How it's built</h2>
+      <div class="cols">
+        <div>
+          <h3>Go core, Swift shell</h3>
+          <p>All DNS logic is a Go library compiled into a universal static archive. The interface is SwiftUI. The two talk over a three-function C bridge and a JSON contract.</p>
+        </div>
+        <div>
+          <h3>Every transport</h3>
+          <p>Plain UDP and TCP, DNS over TLS, DNS over HTTPS and DNS over QUIC, with presets for the public resolvers and room for your own. Intel and Apple silicon, macOS 14 and later.</p>
+        </div>
+        <div>
+          <h3>Nothing in the way</h3>
+          <p>Nordyg never goes through the system resolver, so its answers are what the server said. It runs sandboxed, keeps no account, and never contacts a server of mine.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="get" id="get">
+    <div class="wrap">
+      <h2>Two ways to get it</h2>
+      <div class="ways">
+        <div class="way">
+          <h3>Mac App Store</h3>
+          <p>The signed and notarized build, with updates delivered by the App Store. Nothing to install but the app. At checkout the seller shows as Do Not Panic AS, which is my company.</p>
+          <a class="btn" href={appStore}>Buy on the Mac App Store <span class="price">{price}</span></a>
+        </div>
+        <div class="way">
+          <h3>Build from source</h3>
+          <p>Clone the repository, run make with Xcode and Go installed, and you have the same app. Free, as open source should be.</p>
+          <a class="btn" href={source}>Get the source</a>
+        </div>
+      </div>
+      <p class="why">If you buy the App Store build, that is what funds the work on Nordyg. There is no other tier, no subscription and no feature behind the price. The App Store build is the same app, signed, notarized and kept up to date for you.</p>
+    </div>
+  </section>
+
+  <section class="faq">
+    <div class="wrap">
+      <h2>Questions</h2>
+      <details>
+        <summary>Do I need to pay?</summary>
+        <p>No. The code is open source. Build the app yourself with Xcode and Go installed and run it, that is the whole app with nothing held back. The App Store build exists for people who would rather not build it, and buying it is what funds the work.</p>
+      </details>
+      <details>
+        <summary>Does it replace dig?</summary>
+        <p>For looking things up, yes, and it shows more: the full message with flags and EDNS, a DNSSEC chain it validated itself, several resolvers side by side, a trace from the root, and mail and registry checks. Two things dig does that Nordyg does not: scripting and zone transfers. Neither of them edits records at your DNS provider, and neither does Nordyg. When you want the same lookup in a script or a ticket, copy it from Nordyg as a dig command.</p>
+      </details>
+      <details>
+        <summary>Will it work with my company's DNS or a VPN?</summary>
+        <p>For queries, yes. Nordyg reads the resolvers macOS uses on each network interface, including the ones a VPN pushes for split DNS, and you can add any resolver by address. Trace and DNSSEC validation start at the public root servers, so they cannot see internal-only zones.</p>
+      </details>
+      <details>
+        <summary>Linux, Windows, iPhone?</summary>
+        <p>Mac only. The point is a native app that feels like the rest of the system, not a web view in a window. The DNS core is Go, so a port is possible, but I have no plans for one.</p>
+      </details>
+      <details>
+        <summary>What does it send, and where?</summary>
+        <p>DNS queries to the resolvers you pick, and in the modes that need it, to the root and authoritative servers, registries' RDAP and WHOIS servers, and MTA-STS policy hosts. Nothing to me. The <a href="/privacy/">privacy page</a> lists every server.</p>
+      </details>
+      <details>
+        <summary>What does it need?</summary>
+        <p>macOS 14 or later, Intel or Apple silicon, and network access to whichever resolvers you choose. No account.</p>
+      </details>
+    </div>
+  </section>
+
+</Site>

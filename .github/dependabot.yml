@@ -1,0 +1,19 @@
+# Keeps the SHA-pinned actions, the Go module and the site's npm packages
+# current through pull requests.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directory: /core
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /landing
+    schedule:
+      interval: weekly
+    groups:
+      astro:
+        patterns: ["astro", "@astrojs/*"]

@@ -4,8 +4,17 @@ A native macOS app for DNS queries. Type a name, pick a record type and a resolv
 everything the wire returned: DNSSEC chain, DoH/DoT/DoQ, multi-resolver compare, delegation
 trace, history. No CLI, on purpose.
 
-Nordyg is open source under Apache 2.0. You can build it yourself with Xcode, or buy the
+Nordyg is open source under the AGPL-3.0. You can build it yourself with Xcode, or buy the
 signed and notarized build on the Mac App Store to support the project.
+
+## Open source, closed to contributions
+
+Nordyg is open source, but I do not accept external contributions. This is a personal
+project and I want to keep full control over the codebase and where it goes. I also don't
+have the free time to review and manage contributions.
+
+So please do not open pull requests. If you find a bug, have a question or a suggestion,
+use the Discussions section. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Layout
 
@@ -31,4 +40,4 @@ Or open `app/Nordyg.xcodeproj` in Xcode after `make archive`.
 
 ## Licence
 
-Apache 2.0, see `LICENSE`.
+GNU Affero General Public License v3.0, see `LICENSE`.

@@ -7,6 +7,7 @@
 #   make run      build and open the app
 #   make xcodeproj regenerate app/Nordyg.xcodeproj from app/project.yml
 #   make icon     render app/Nordyg/AppIcon.icon's layer from app/design/logo-tile.png
+#   make landing  build the website (landing/dist); make landing-dev runs the dev server
 #   make clean
 #
 # Go is pinned via GOTOOLCHAIN so the version on PATH does not matter.
@@ -100,5 +101,15 @@ app: archive
 run: app
 	open $(APP)
 
+# --- Website (landing + docs, Astro/Starlight in landing/) -----------------------
+
+.PHONY: landing landing-dev
+
+landing:
+	cd landing && npm ci && npm run build
+
+landing-dev:
+	cd landing && npm install && npm run dev
+
 clean:
-	rm -rf $(BUILD) app/build $(APP_HDR)
+	rm -rf $(BUILD) app/build $(APP_HDR) landing/dist

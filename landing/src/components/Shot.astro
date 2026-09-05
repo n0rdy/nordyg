@@ -1,0 +1,14 @@
+---
+// Screenshot slot. Until real captures exist it renders a window frame with a
+// description of the shot that belongs there; pass `src` to show the image.
+interface Props { label: string; detail: string; src?: string; alt?: string; }
+const { label, detail, src, alt } = Astro.props;
+---
+<figure class="shot" role={src ? undefined : 'img'} aria-label={src ? undefined : `Screenshot placeholder: ${label}`}>
+  <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+  {src ? (
+    <img src={src} alt={alt ?? label} loading="lazy" decoding="async" />
+  ) : (
+    <div class="body"><span><strong>{label}</strong>{detail}</span></div>
+  )}
+</figure>

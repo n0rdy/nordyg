@@ -1,6 +1,6 @@
 import Foundation
 
-// Swift mirror of docs/contract.md. Property names are camelCase; the coder
+// Swift mirror of context/contract.md. Property names are camelCase; the coder
 // converts to and from snake_case. Unknown fields are ignored on decode so
 // the core can add data freely.
 

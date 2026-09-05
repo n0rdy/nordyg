@@ -35,7 +35,7 @@ targets:
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.developer-tools
         LSMinimumSystemVersion: "14.0"
-        NSHumanReadableCopyright: "Copyright © 2026 n0rdy. Apache 2.0."
+        NSHumanReadableCopyright: "Copyright © 2026 Do Not Panic AS. AGPL-3.0."
         NSHighResolutionCapable: true
     entitlements:
       path: Nordyg/Nordyg.entitlements

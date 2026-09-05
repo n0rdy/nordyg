@@ -4,7 +4,7 @@
 CONTEXT.md
 CLAUDE.md
 
-docs/
+/context/
 
 # build outputs
 core/build/
@@ -14,3 +14,11 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 .DS_Store
+
+# website
+landing/node_modules/
+landing/dist/
+landing/.astro/
+
+# editors
+.vscode/
