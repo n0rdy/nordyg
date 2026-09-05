@@ -1,30 +1,20 @@
-name: Deploy site (nordyg.com)
-
-# Builds the Astro site in landing/ and deploys it to Cloudflare Pages.
-# Pushes to main deploy production; pull requests from branches in this repo
-# get a preview URL (fork PRs have no access to the secrets, so they only build).
-# Secrets: CLOUDFLARE_API_TOKEN (Pages edit), CLOUDFLARE_ACCOUNT_ID.
-# Actions are pinned to commit SHAs; the comment carries the version.
+name: Deploy landing (nordyg.com)
 
 on:
   push:
     branches: [main]
-    paths: ['landing/**', '.github/workflows/pages.yml']
-  pull_request:
-    paths: ['landing/**', '.github/workflows/pages.yml']
+    paths: ['landing/**']
   workflow_dispatch:
 
 permissions:
   contents: read
-  deployments: write
-  pull-requests: write
 
 concurrency:
-  group: pages-${{ github.ref }}
+  group: "pages"
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,23 +31,26 @@ jobs:
           npm ci
           npm run build
 
-      # The branch name is untrusted input on pull requests. Validate it and
-      # hand it over through an environment variable, never interpolated into
-      # the command line, so it cannot smuggle extra flags to wrangler.
-      - name: Validate branch name
-        env:
-          RAW_BRANCH: ${{ github.head_ref || github.ref_name }}
-        run: |
-          case "$RAW_BRANCH" in
-            ""|-*) echo "refusing branch name '$RAW_BRANCH'"; exit 1 ;;
-            *[!A-Za-z0-9._/-]*) echo "refusing branch name '$RAW_BRANCH'"; exit 1 ;;
-          esac
-          echo "DEPLOY_BRANCH=$RAW_BRANCH" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: landing
+          path: landing/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: cloudflare-pages
+      url: https://nordyg.com
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: landing
+          path: dist
 
       - name: Deploy to Cloudflare Pages
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy landing/dist --project-name=nordyg --branch="$DEPLOY_BRANCH"
+          command: pages deploy dist --project-name=nordyg --branch=main

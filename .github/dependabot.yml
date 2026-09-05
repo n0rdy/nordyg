@@ -1,19 +1,77 @@
-# Keeps the SHA-pinned actions, the Go module and the site's npm packages
-# current through pull requests.
 version: 2
 updates:
-  - package-ecosystem: github-actions
-    directory: /
+  # Daily security updates
+  - package-ecosystem: "gomod"
+    target-branch: "main"
+    directory: "/core"
     schedule:
-      interval: weekly
-  - package-ecosystem: gomod
-    directory: /core
+      interval: "daily"
+      time: "12:00"
+      timezone: "Europe/Oslo"
+    assignees:
+      - "n0rdy"
+    # Enables security updates only
+    open-pull-requests-limit: 0
+  - package-ecosystem: "github-actions"
+    target-branch: "main"
+    directory: "/"
     schedule:
-      interval: weekly
-  - package-ecosystem: npm
-    directory: /landing
+      interval: "daily"
+      time: "12:00"
+      timezone: "Europe/Oslo"
+    assignees:
+      - "n0rdy"
+    # Enables security updates only
+    open-pull-requests-limit: 0
+  - package-ecosystem: "npm"
+    target-branch: "main"
+    directory: "/landing"
     schedule:
-      interval: weekly
+      interval: "daily"
+      time: "12:00"
+      timezone: "Europe/Oslo"
+    assignees:
+      - "n0rdy"
+    # Enables security updates only
+    open-pull-requests-limit: 0
+
+  # Weekly updates for all packages
+  - package-ecosystem: "gomod"
+    directory: "/core"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "12:00"
+      timezone: "Europe/Oslo"
+    assignees:
+      - "n0rdy"
     groups:
-      astro:
-        patterns: ["astro", "@astrojs/*"]
+      gomod:
+        patterns:
+          - "**"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "12:00"
+      timezone: "Europe/Oslo"
+    assignees:
+      - "n0rdy"
+    groups:
+      github-actions:
+        patterns:
+          - "**"
+  - package-ecosystem: "npm"
+    directory: "/landing"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "12:00"
+      timezone: "Europe/Oslo"
+    assignees:
+      - "n0rdy"
+    groups:
+      npm:
+        patterns:
+          - "**"
