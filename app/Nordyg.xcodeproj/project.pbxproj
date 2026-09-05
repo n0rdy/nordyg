@@ -14,6 +14,7 @@
 		28FD7195F45FD6ED7BD75544 /* EmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC5484107ACD135B39E7E13D /* EmailView.swift */; };
 		37DE70F461EACF2170FEFC38 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F8C9238FB7F10930BB8EDDFE /* Assets.xcassets */; };
 		3C83A913246980103EF0641D /* TraceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD7B9BEE151A9DB9A3F7094 /* TraceView.swift */; };
+		769F5477EC6A291C9C3CC96D /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 85317044D794DF2935CD0676 /* AppIcon.icon */; };
 		820894E762F1EED80DB70068 /* RecordDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B77C6D5F2806DF13D416182 /* RecordDetail.swift */; };
 		8C69467B616CDABBE6E4D918 /* QueryResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CF6A7A69A355276A1A4D3E /* QueryResultView.swift */; };
 		97F294C961493B18A4AF1B0E /* CoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA298458E1FC218F3D43D8F9 /* CoreBridge.swift */; };
@@ -54,6 +55,7 @@
 		6FD7B9BEE151A9DB9A3F7094 /* TraceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TraceView.swift; sourceTree = "<group>"; };
 		73D887D92E6DD0BA362E5276 /* Nordyg.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Nordyg.entitlements; sourceTree = "<group>"; };
 		7B77C6D5F2806DF13D416182 /* RecordDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordDetail.swift; sourceTree = "<group>"; };
+		85317044D794DF2935CD0676 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		8691B7565317767E3CA6034C /* WatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchView.swift; sourceTree = "<group>"; };
 		8D7C6B267CD2CFC21912F6B6 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
 		9CBC3718CAF2A1B452FF1C10 /* CompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareView.swift; sourceTree = "<group>"; };
@@ -165,6 +167,7 @@
 		F08CF871BC88F03299B8D696 /* Nordyg */ = {
 			isa = PBXGroup;
 			children = (
+				85317044D794DF2935CD0676 /* AppIcon.icon */,
 				F8C9238FB7F10930BB8EDDFE /* Assets.xcassets */,
 				2F3EF3B2BD66623456A4D7ED /* Info.plist */,
 				73D887D92E6DD0BA362E5276 /* Nordyg.entitlements */,
@@ -236,6 +239,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				769F5477EC6A291C9C3CC96D /* AppIcon.icon in Resources */,
 				37DE70F461EACF2170FEFC38 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

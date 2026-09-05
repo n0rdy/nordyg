@@ -1,0 +1,21 @@
+{
+  "fill" : {
+    "solid" : "srgb:0.078,0.110,0.149,1.000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "logo.png",
+          "name" : "logo"
+        }
+      ]
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

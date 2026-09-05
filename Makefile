@@ -6,6 +6,7 @@
 #   make app      build the SwiftUI app (Debug, ad-hoc signed)
 #   make run      build and open the app
 #   make xcodeproj regenerate app/Nordyg.xcodeproj from app/project.yml
+#   make icon     render app/Nordyg/AppIcon.icon's layer from app/design/logo-tile.png
 #   make clean
 #
 # Go is pinned via GOTOOLCHAIN so the version on PATH does not matter.
@@ -79,11 +80,15 @@ XCODEPROJ := app/Nordyg.xcodeproj
 DERIVED   := app/build/DerivedData
 APP       := $(DERIVED)/Build/Products/Debug/Nordyg.app
 
-.PHONY: xcodeproj app run
+.PHONY: xcodeproj app run icon
 
 # Regenerate the Xcode project from app/project.yml (needs xcodegen).
 xcodeproj:
 	cd app && xcodegen generate
+
+# Render the Icon Composer package's layer from the logo tile.
+icon:
+	swift app/tools/make-icon.swift app/design/logo-tile.png app/Nordyg/AppIcon.icon
 
 # Debug build of the app, ad-hoc signed (no team needed).
 app: archive

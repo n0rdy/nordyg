@@ -19,6 +19,11 @@ targets:
     platform: macOS
     sources:
       - path: Nordyg
+        excludes:
+          - "AppIcon.icon/**"
+      - path: Nordyg/AppIcon.icon
+        type: file
+        buildPhase: resources
       - path: NordygCore
         buildPhase: none
     info:
