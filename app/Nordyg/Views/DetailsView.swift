@@ -48,7 +48,7 @@ struct ExchangeSection: View {
         Section2("Wire") {
             KV("Endpoint", exchange.endpoint.summary)
             KV("Protocol", exchange.protocol + (exchange.truncatedRetry ? " (retried over TCP after truncation)" : ""))
-            KV("Round trip", String(format: "%.2f ms", exchange.rttMs))
+            KV("Round trip", ms(exchange.rttMs))
             KV("Started", exchange.startedAt)
             if let h = exchange.http {
                 KV("HTTP", "\(h.version) \(h.status) \(h.contentType)")

@@ -5,94 +5,145 @@ struct TraceView: View {
     var result: TraceResult
     @State private var tab = "hops"
 
+    var total: Double { result.hops.map(\.exchange.rttMs).reduce(0, +) }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            StatusStrip {
+                RcodeBadge(rcode: result.final.rcode)
+                if let d = result.dnssec { StatusBadge(status: d.status) }
+                Pill(text: "\(result.hops.count) hops", icon: "point.3.connected.trianglepath.dotted", color: .accentColor, mono: true, help: Glossary.hops)
+                Pill(text: ms(total) + " total", icon: "timer", mono: true, help: Glossary.totalTime)
+                Pill(text: "\(result.final.answer.count) answers", mono: true, help: Glossary.answers)
+                Spacer()
                 Picker("", selection: $tab) {
-                    Text("Hops").tag("hops")
+                    Text("Path").tag("hops")
                     Text("Final answer").tag("final")
                     Text("DNSSEC").tag("dnssec")
                 }
-                .pickerStyle(.segmented).frame(width: 300)
-                Spacer()
-                RcodeBadge(rcode: result.final.rcode)
-                if let d = result.dnssec { StatusBadge(status: d.status) }
-                Text("\(result.hops.count) hops, \(String(format: "%.0f", result.hops.map(\.exchange.rttMs).reduce(0, +))) ms total").font(.callout).monospacedDigit()
+                .pickerStyle(.segmented).frame(width: 280)
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
             Divider()
             switch tab {
             case "final": RecordsView(messages: [result.final])
             case "dnssec": DNSSECView(result: result.dnssec)
-            default:
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(Array(result.hops.enumerated()), id: \.offset) { i, hop in
-                            HopView(index: i, hop: hop)
-                        }
-                    }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            default: TraceTimeline(hops: result.hops)
             }
         }
     }
 }
 
-struct HopView: View {
-    var index: Int
-    var hop: TraceHop
-    @State private var showMessage = false
+/// Vertical timeline: one node per hop, latency bars, lock markers where a
+/// DS record hands trust down.
+struct TraceTimeline: View {
+    var hops: [TraceHop]
+    var maxRTT: Double { max(hops.map(\.exchange.rttMs).max() ?? 1, 1) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("\(index + 1)").font(.caption.weight(.bold)).frame(width: 20, height: 20)
-                    .background(Color.accentColor.opacity(0.2)).clipShape(Circle())
-                Text(hop.zone).font(.system(.body, design: .monospaced).weight(.semibold))
-                Text("via \(hop.server.name) \(hop.server.address)").foregroundStyle(.secondary)
-                Spacer()
-                Text(String(format: "%.1f ms", hop.exchange.rttMs)).monospacedDigit().foregroundStyle(.secondary)
-                RcodeBadge(rcode: hop.message.rcode)
-                if hop.message.flags.aa { Text("AA").font(.caption.weight(.bold)).foregroundStyle(.green) }
-            }
-            if let ref = hop.referral {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "arrow.turn.down.right").foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(ref.zone) → \(ref.nameservers.joined(separator: ", "))").font(.system(.callout, design: .monospaced))
-                        if !ref.glue.isEmpty {
-                            Text("glue: " + ref.glue.keys.sorted().map { "\($0) \(ref.glue[$0]!.joined(separator: " "))" }.joined(separator: "; "))
-                                .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-                        }
-                        Text(ref.ds.isEmpty ? "no DS (unsigned delegation)" : "DS: " + ref.ds.map(\.rdata).joined(separator: "; "))
-                            .font(.system(.caption, design: .monospaced)).foregroundStyle(ref.ds.isEmpty ? Color.secondary : Color.green)
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(hops.enumerated()), id: \.offset) { i, hop in
+                    HopRow(index: i, hop: hop, isLast: i == hops.count - 1, fraction: hop.exchange.rttMs / maxRTT)
                 }
-                .padding(.leading, 28)
-            } else if !hop.message.answer.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(hop.message.answer.enumerated()), id: \.offset) { _, r in
-                        Text("\(r.name) \(r.ttl) \(r.type) \(r.rdata)").font(.system(.callout, design: .monospaced))
-                    }
-                }
-                .padding(.leading, 28)
             }
-            HStack {
-                Text("candidates: \(hop.candidates.joined(separator: ", "))").font(.caption).foregroundStyle(.tertiary).lineLimit(1)
-                Spacer()
-                Button(showMessage ? "Hide message" : "Show message") { showMessage.toggle() }.buttonStyle(.link).font(.caption)
-            }
-            .padding(.leading, 28)
-            if showMessage {
-                Text(hop.message.text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.secondary.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 6))
-                    .padding(.leading, 28)
-            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(10)
-        .background(Color.secondary.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+struct HopRow: View {
+    var index: Int
+    var hop: TraceHop
+    var isLast: Bool
+    var fraction: Double
+    @State private var showMessage = false
+
+    var nodeColor: Color {
+        if hop.referral != nil { return .accentColor }
+        return Rcode.color(hop.message.rcode)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            // Rail
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle().fill(nodeColor).frame(width: 26, height: 26)
+                    Text("\(index + 1)").font(.caption.weight(.bold)).foregroundStyle(.white)
+                }
+                if !isLast {
+                    Rectangle().fill(Color.secondary.opacity(0.3)).frame(width: 2).frame(maxHeight: .infinity)
+                }
+            }
+            .frame(width: 26)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(hop.zone == "." ? "root" : prose(hop.zone)).font(.system(.title3, design: .monospaced).weight(.semibold))
+                    if hop.message.flags.aa { Pill(text: "authoritative", icon: "checkmark.seal.fill", color: .green, help: "AA flag set: this server is authoritative for the zone and answered from its own data, not a cache.") }
+                    if hop.referral != nil { Pill(text: "referral", icon: "arrow.turn.down.right", color: .accentColor, help: "This server does not hold the answer; it pointed to the nameservers of the next zone down.") }
+                    if hop.referral == nil && hop.message.rcode != "NOERROR" { RcodeBadge(rcode: hop.message.rcode) }
+                    Spacer()
+                }
+                Text("asked \(hop.server.name) at \(hop.server.address)")
+                    .font(.callout).foregroundStyle(.secondary)
+
+                // Latency bar
+                HStack(spacing: 8) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 3).fill(Color.secondary.opacity(0.12))
+                            RoundedRectangle(cornerRadius: 3).fill(nodeColor.opacity(0.7))
+                                .frame(width: max(4, geo.size.width * fraction))
+                        }
+                    }
+                    .frame(height: 8)
+                    Text(ms(hop.exchange.rttMs)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
+                }
+
+                if let ref = hop.referral {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Image(systemName: ref.ds.isEmpty ? "lock.open" : "lock.fill").foregroundStyle(ref.ds.isEmpty ? Color.secondary : Color.yellow)
+                            Text(ref.ds.isEmpty ? "hands off \(prose(ref.zone)) without a DS record (unsigned below here)" : "hands off \(prose(ref.zone)) with \(ref.ds.count) DS record\(ref.ds.count == 1 ? "" : "s")")
+                                .font(.callout)
+                        }
+                        Text(ref.nameservers.joined(separator: "  ")).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                        if !ref.glue.isEmpty {
+                            Text("glue: " + ref.glue.keys.sorted().map { "\($0) → \(ref.glue[$0]!.joined(separator: ", "))" }.joined(separator: "   "))
+                                .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                    }
+                    .padding(8)
+                    .background(Color.secondary.opacity(0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                } else if !hop.message.answer.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(Array(hop.message.answer.enumerated()), id: \.offset) { _, r in
+                            HStack(spacing: 8) {
+                                TypeBadge(type: r.type)
+                                Text(r.rdata).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                            }
+                        }
+                    }
+                    .padding(8)
+                    .background(Color.secondary.opacity(0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+
+                HStack {
+                    Text("candidates: \(hop.candidates.count)  ·  \(hop.message.sizeBytes) B").font(.caption).foregroundStyle(.tertiary)
+                    Spacer()
+                    Button(showMessage ? "Hide message" : "Show message") { showMessage.toggle() }.buttonStyle(.link).font(.caption)
+                }
+                if showMessage {
+                    Text(hop.message.text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                        .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+            }
+            .padding(.bottom, isLast ? 0 : 18)
+        }
     }
 }

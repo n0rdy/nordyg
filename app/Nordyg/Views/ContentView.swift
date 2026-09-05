@@ -16,6 +16,10 @@ struct ContentView: View {
                 }
                 ResultArea()
             }
+            .inspector(isPresented: $model.showInspector) {
+                InspectorView()
+                    .inspectorColumnWidth(min: 260, ideal: 340, max: 520)
+            }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -25,6 +29,15 @@ struct ContentView: View {
                     Label("Copy as", systemImage: "doc.on.doc")
                 }
                 .disabled(model.outcome == nil && model.name.isEmpty)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    model.showInspector.toggle()
+                } label: {
+                    Label("Inspector", systemImage: "sidebar.trailing")
+                }
+                .help("Show or hide the record inspector (⌥⌘I)")
+                .keyboardShortcut("i", modifiers: [.command, .option])
             }
         }
     }
@@ -60,19 +73,25 @@ struct ResultArea: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .id(model.resultVersion)
+        .transition(.opacity)
+        .modifier(ResultAnimation(value: model.resultVersion))
     }
 }
 
 struct Placeholder: View {
     var running: Bool
     var body: some View {
-        VStack(spacing: 10) {
-            if running {
+        if running {
+            VStack(spacing: 10) {
                 ProgressView()
-                Text("Querying…").foregroundStyle(.secondary)
-            } else {
-                Image(systemName: "network").font(.system(size: 40)).foregroundStyle(.tertiary)
-                Text("Type a name, pick a type and a resolver, press ⌘↩").foregroundStyle(.secondary)
+                Text("Asking the wire…").foregroundStyle(.secondary)
+            }
+        } else {
+            ContentUnavailableView {
+                Label("Ask the DNS something", systemImage: "network")
+            } description: {
+                Text("Type a name, pick a type and a resolver, press ⌘↩.\nAn IP address runs a reverse lookup. ALL fans out over the common types.")
             }
         }
     }
@@ -93,13 +112,6 @@ struct ExportMenu: View {
             .disabled(model.outcome == nil)
         Button("Copy answers as Markdown table") { if let s = MarkdownExport.table(model.outcome) { Pasteboard.copy(s) } }
             .disabled(model.outcome == nil)
-    }
-}
-
-enum Pasteboard {
-    static func copy(_ s: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(s, forType: .string)
     }
 }
 

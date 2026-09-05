@@ -39,6 +39,9 @@ final class AppModel: ObservableObject {
     // Outcome
     @Published var isRunning = false
     @Published var outcome: Outcome?
+    @Published var resultVersion = 0
+    @Published var selectedRecord: Record?
+    @Published var showInspector = false
     @Published var errorMessage: String?
     @Published var history: [HistoryItem] = HistoryStore.load()
 
@@ -125,6 +128,8 @@ final class AppModel: ObservableObject {
                     out = .trace(r)
                 }
                 self.outcome = out
+                self.resultVersion += 1
+                self.selectedRecord = nil
                 self.remember(HistoryItem(name: n, type: t, mode: mode.rawValue, endpoint: mode == .query ? endpoint : nil))
             } catch is CancellationError {
                 // user cancelled

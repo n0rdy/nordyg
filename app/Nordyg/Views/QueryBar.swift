@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// The command bar: one monospaced field with the type and resolver as
+/// inline tokens, a big Run button, and a second row for mode and options.
 struct QueryBar: View {
     @EnvironmentObject var model: AppModel
     @State private var showCustom = false
@@ -8,67 +10,66 @@ struct QueryBar: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                TextField("Name or IP address", text: $model.name)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.body, design: .monospaced))
-                    .focused($nameFocused)
-                    .onSubmit { model.run() }
-                    .frame(minWidth: 240)
-
-                Picker("Type", selection: $model.type) {
-                    ForEach(RecordTypes.all, id: \.self) { Text($0).tag($0) }
+            HStack(spacing: 10) {
+                HStack(spacing: 0) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary).padding(.leading, 10).padding(.trailing, 6)
+                    TextField("name or IP address", text: $model.name)
+                        .textFieldStyle(.plain)
+                        .font(.system(.title3, design: .monospaced))
+                        .focused($nameFocused)
+                        .onSubmit { model.run() }
+                    Token {
+                        Picker("Type", selection: $model.type) {
+                            ForEach(RecordTypes.all, id: \.self) { Text($0).tag($0) }
+                        }
+                        .pickerStyle(.inline)
+                    } label: {
+                        Text(model.type).font(.system(.callout, design: .monospaced).weight(.bold)).foregroundStyle(TypeStyle.color(model.type))
+                    }
+                    if model.mode == .query {
+                        Token {
+                            EndpointPickerItems(selection: $model.selected)
+                        } label: {
+                            Label(model.selected?.title ?? "resolver", systemImage: "server.rack").font(.callout).lineLimit(1)
+                        }
+                    } else if model.mode == .compare {
+                        CompareEndpointPicker()
+                    } else {
+                        Text("root → authoritative").font(.callout).foregroundStyle(.secondary).padding(.horizontal, 10)
+                    }
                 }
-                .labelsHidden()
-                .frame(width: 96)
+                .frame(height: 40)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .textBackgroundColor)))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(nameFocused ? Color.accentColor.opacity(0.7) : Color.secondary.opacity(0.25), lineWidth: nameFocused ? 1.5 : 1))
 
+                if model.isRunning {
+                    Button { model.cancel() } label: { Label("Cancel", systemImage: "stop.fill").frame(minWidth: 72) }
+                        .controlSize(.large).tint(.red)
+                } else {
+                    Button { model.run() } label: { Label("Run", systemImage: "play.fill").frame(minWidth: 72) }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!model.canRun)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .tint(.green)
+                }
+            }
+
+            HStack(spacing: 10) {
                 Picker("Mode", selection: $model.mode) {
                     ForEach(Mode.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 220)
-
-                if model.isRunning {
-                    Button {
-                        model.cancel()
-                    } label: {
-                        Label("Cancel", systemImage: "stop.fill").frame(minWidth: 70)
-                    }
-                    .controlSize(.large)
-                    .tint(.red)
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button {
-                        model.run()
-                    } label: {
-                        Label("Run", systemImage: "play.fill").frame(minWidth: 70)
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!model.canRun)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .tint(.green)
-                }
-            }
-
-            HStack(spacing: 8) {
-                switch model.mode {
-                case .query:
-                    EndpointPicker(selection: $model.selected)
-                    Button { showCustom = true } label: { Image(systemName: "plus") }
-                        .help("Add a custom resolver")
-                case .compare:
-                    CompareEndpointPicker()
-                    Button { showCustom = true } label: { Image(systemName: "plus") }
-                        .help("Add a custom resolver")
-                case .trace:
-                    Text("Iterative from the root servers").foregroundStyle(.secondary)
-                }
+                .frame(width: 240)
+                Text(modeHint).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
+                if model.isRunning { ProgressView().controlSize(.small) }
                 if model.mode != .compare {
                     Toggle("Validate DNSSEC", isOn: $model.validate).toggleStyle(.checkbox)
                 }
+                Button { showCustom = true } label: { Label("Resolver", systemImage: "plus") }
+                    .help("Add a custom resolver")
                 Button { showOptions.toggle() } label: { Image(systemName: "slider.horizontal.3") }
                     .help("Query options")
                     .popover(isPresented: $showOptions) { OptionsView(options: $model.options).padding() }
@@ -79,9 +80,35 @@ struct QueryBar: View {
         .sheet(isPresented: $showCustom) { CustomEndpointSheet() }
         .onAppear { nameFocused = true }
     }
+
+    var modeHint: String {
+        switch model.mode {
+        case .query: return "one resolver, full detail"
+        case .compare: return "several resolvers at once, differences highlighted"
+        case .trace: return "follow delegations from the root servers"
+        }
+    }
 }
 
-struct EndpointPicker: View {
+/// A menu styled as an inline token inside the command bar.
+struct Token<Content: View, L: View>: View {
+    @ViewBuilder var content: Content
+    @ViewBuilder var label: L
+
+    var body: some View {
+        Menu { content } label: { label }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(.trailing, 6)
+    }
+}
+
+/// The resolver list, grouped, usable inside a Menu or Picker.
+struct EndpointPickerItems: View {
     @EnvironmentObject var model: AppModel
     @Binding var selection: Endpoint?
 
@@ -106,7 +133,7 @@ struct EndpointPicker: View {
                 }
             }
         }
-        .frame(maxWidth: 360)
+        .pickerStyle(.inline)
     }
 }
 
@@ -118,8 +145,13 @@ struct CompareEndpointPicker: View {
         Button {
             open.toggle()
         } label: {
-            Label("\(model.compareSelection.count) resolvers", systemImage: "checklist")
+            Label("\(model.compareSelection.count) resolvers", systemImage: "checklist").font(.callout)
         }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Color.secondary.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .padding(.trailing, 6)
         .popover(isPresented: $open) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {

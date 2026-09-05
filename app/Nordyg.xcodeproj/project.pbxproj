@@ -11,16 +11,19 @@
 		123BB2C7D292495FBDE1D1FD /* QueryBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57E1032E4B1912602DA8E0F6 /* QueryBar.swift */; };
 		1968B06CB86F5BDFBC2CECE3 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 033AFA978BEC7A1F7B4A3C24 /* CoreFoundation.framework */; };
 		19C6A6A2B084B43FA2C57C9E /* Contract.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE6EDBC45BAE685E6A30F3B /* Contract.swift */; };
+		37DE70F461EACF2170FEFC38 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F8C9238FB7F10930BB8EDDFE /* Assets.xcassets */; };
 		3C83A913246980103EF0641D /* TraceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD7B9BEE151A9DB9A3F7094 /* TraceView.swift */; };
 		8C69467B616CDABBE6E4D918 /* QueryResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CF6A7A69A355276A1A4D3E /* QueryResultView.swift */; };
 		97F294C961493B18A4AF1B0E /* CoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA298458E1FC218F3D43D8F9 /* CoreBridge.swift */; };
 		A094BEA3D065337DBC388D35 /* DetailsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04E9BE2BF54273089464150C /* DetailsView.swift */; };
 		A39E96BE7FDBE0B9F7C3F002 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8D7C6B267CD2CFC21912F6B6 /* SystemConfiguration.framework */; };
 		A68EBB735D368413FE4D2D32 /* DNSSECView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0B9951B7ED27F5CA39F03F /* DNSSECView.swift */; };
+		AF1CB4FA50EEBEC290313992 /* InspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41B4A9109DCAF431DBEDA85 /* InspectorView.swift */; };
 		C5DB41DC623384B4FF764EA3 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD92D60BBA8CD7918A1EBBB6 /* ContentView.swift */; };
 		CB3D2C1089E90722A9FEB10B /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6349ECABD302FD6CD13C3D1A /* HistoryView.swift */; };
 		D5481E55DD56C6D970C05D1C /* History.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0398D499E37F2DFFB5BE296A /* History.swift */; };
 		D7F96C26DCBBB7B059530FC9 /* CompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CBC3718CAF2A1B452FF1C10 /* CompareView.swift */; };
+		DC821772277930838732CC4E /* Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C35D0A5583336D66422EB05 /* Style.swift */; };
 		EE94450E7756AFD6937BCDB7 /* NordygApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F543A15E0D412ED6A81EC90 /* NordygApp.swift */; };
 		F49E1B2B1C820BEA7904E28E /* SystemResolvers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C725578BDAB3F4F7D41862 /* SystemResolvers.swift */; };
 		F5588726D26CDAB2CDCD5B4A /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 126A49E5275FB83FA0A413EE /* JSONValue.swift */; };
@@ -33,6 +36,7 @@
 		0398D499E37F2DFFB5BE296A /* History.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = History.swift; sourceTree = "<group>"; };
 		04E9BE2BF54273089464150C /* DetailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailsView.swift; sourceTree = "<group>"; };
 		08A4CD629480DD0D02DC72AD /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
+		0C35D0A5583336D66422EB05 /* Style.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Style.swift; sourceTree = "<group>"; };
 		0F543A15E0D412ED6A81EC90 /* NordygApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NordygApp.swift; sourceTree = "<group>"; };
 		126A49E5275FB83FA0A413EE /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
 		2F3EF3B2BD66623456A4D7ED /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -49,6 +53,8 @@
 		C111DA1D51ABC444DDD8BBD6 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		CE0B9951B7ED27F5CA39F03F /* DNSSECView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DNSSECView.swift; sourceTree = "<group>"; };
 		D8C87B2C5A32B93139BFA60E /* libnordyg.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = libnordyg.h; sourceTree = "<group>"; };
+		F41B4A9109DCAF431DBEDA85 /* InspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorView.swift; sourceTree = "<group>"; };
+		F8C9238FB7F10930BB8EDDFE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FA298458E1FC218F3D43D8F9 /* CoreBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBridge.swift; sourceTree = "<group>"; };
 		FEE6EDBC45BAE685E6A30F3B /* Contract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Contract.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -132,8 +138,10 @@
 				04E9BE2BF54273089464150C /* DetailsView.swift */,
 				CE0B9951B7ED27F5CA39F03F /* DNSSECView.swift */,
 				6349ECABD302FD6CD13C3D1A /* HistoryView.swift */,
+				F41B4A9109DCAF431DBEDA85 /* InspectorView.swift */,
 				57E1032E4B1912602DA8E0F6 /* QueryBar.swift */,
 				A2CF6A7A69A355276A1A4D3E /* QueryResultView.swift */,
+				0C35D0A5583336D66422EB05 /* Style.swift */,
 				6FD7B9BEE151A9DB9A3F7094 /* TraceView.swift */,
 			);
 			path = Views;
@@ -142,6 +150,7 @@
 		F08CF871BC88F03299B8D696 /* Nordyg */ = {
 			isa = PBXGroup;
 			children = (
+				F8C9238FB7F10930BB8EDDFE /* Assets.xcassets */,
 				2F3EF3B2BD66623456A4D7ED /* Info.plist */,
 				73D887D92E6DD0BA362E5276 /* Nordyg.entitlements */,
 				0F543A15E0D412ED6A81EC90 /* NordygApp.swift */,
@@ -160,6 +169,7 @@
 			buildConfigurationList = 22A85577DE58765CFCE48C25 /* Build configuration list for PBXNativeTarget "Nordyg" */;
 			buildPhases = (
 				D2317AA3DA808657A685D803 /* Sources */,
+				076FDA6A933B2D594666A2C4 /* Resources */,
 				E64E8CE8FCF5A0859BAC7CDB /* Frameworks */,
 			);
 			buildRules = (
@@ -206,6 +216,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		076FDA6A933B2D594666A2C4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				37DE70F461EACF2170FEFC38 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		D2317AA3DA808657A685D803 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -220,10 +241,12 @@
 				A094BEA3D065337DBC388D35 /* DetailsView.swift in Sources */,
 				D5481E55DD56C6D970C05D1C /* History.swift in Sources */,
 				CB3D2C1089E90722A9FEB10B /* HistoryView.swift in Sources */,
+				AF1CB4FA50EEBEC290313992 /* InspectorView.swift in Sources */,
 				F5588726D26CDAB2CDCD5B4A /* JSONValue.swift in Sources */,
 				EE94450E7756AFD6937BCDB7 /* NordygApp.swift in Sources */,
 				123BB2C7D292495FBDE1D1FD /* QueryBar.swift in Sources */,
 				8C69467B616CDABBE6E4D918 /* QueryResultView.swift in Sources */,
+				DC821772277930838732CC4E /* Style.swift in Sources */,
 				F49E1B2B1C820BEA7904E28E /* SystemResolvers.swift in Sources */,
 				3C83A913246980103EF0641D /* TraceView.swift in Sources */,
 			);
@@ -236,6 +259,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Nordyg/Nordyg.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -303,7 +327,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -366,7 +390,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -383,6 +407,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Nordyg/Nordyg.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;

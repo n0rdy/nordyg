@@ -15,7 +15,7 @@ export GOTOOLCHAIN := go$(GO_VERSION)
 export CGO_ENABLED := 1
 
 # App Store minimum. Keep in sync with the Xcode deployment target.
-MACOSX_MIN      := 13.0
+MACOSX_MIN      := 14.0
 export CGO_CFLAGS  := -mmacosx-version-min=$(MACOSX_MIN)
 export CGO_LDFLAGS := -mmacosx-version-min=$(MACOSX_MIN)
 
