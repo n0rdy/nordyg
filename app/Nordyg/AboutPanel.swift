@@ -6,8 +6,7 @@ enum Links {
     static let docs = URL(string: "https://nordyg.com/docs/")!
     static let source = URL(string: "https://github.com/n0rdy/nordyg")!
     static let discussions = URL(string: "https://github.com/n0rdy/nordyg/discussions/categories/bugs")!
-    static let blog = URL(string: "https://n0rdy.foo")!
-    static let x = URL(string: "https://x.com/_n0rdy_")!
+    static let maker = URL(string: "https://myko.n0rdy.foo")!
     static let licence = URL(string: "https://github.com/n0rdy/nordyg/blob/main/LICENSE")!
 }
 
@@ -28,10 +27,8 @@ enum AboutPanel {
         }
         line("A native DNS client for macOS.")
         line("")
-        line("Made by Myko Nordy")
-        line("x.com/_n0rdy_", link: Links.x, newline: false)
-        line("  ·  ", newline: false)
-        line("n0rdy.foo", link: Links.blog)
+        line("Made by ", newline: false)
+        line("Myko Nordy", link: Links.maker)
         line("")
         line("Source code", link: Links.source, newline: false)
         line("  ·  ", newline: false)
