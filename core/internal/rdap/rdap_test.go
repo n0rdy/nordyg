@@ -49,15 +49,18 @@ const registrarJSON = `{
 }`
 
 type world struct {
-	op  *Op
-	ep  contract.Endpoint
-	exp string
+	op       *Op
+	ep       contract.Endpoint
+	exp      string
+	whoisExp string
 }
 
 func setup(t *testing.T) *world {
 	t.Helper()
 	cert := testdns.NewCert(t, "rdap.test", "registrar.test", "data.iana.test")
 	exp := time.Now().Add(20 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	// WHOIS registries often give a bare date; keep it relative so the test never ages out.
+	whoisExp := time.Now().AddDate(0, 0, 200).UTC().Format("2006-01-02")
 
 	var port string
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +105,7 @@ func setup(t *testing.T) *world {
 				case "cc":
 					_, _ = c.Write([]byte("domain:       CC\nwhois:        whois.nic.cc.test\nstatus:       ACTIVE\n"))
 				case "example.cc":
-					_, _ = c.Write([]byte("% Terms apply\nDomain Name: example.cc\nRegistrar: Example Registrar AS\nRegistrar IANA ID: 9999\nCreation Date: 2020-01-15T10:00:00Z\nRegistry Expiry Date: 2027-01-15\nUpdated Date: 2026-01-10T00:00:00Z\nName Server: ns1.example.test\nName Server: NS2.EXAMPLE.TEST\nDomain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\nDNSSEC: unsigned\nRegistrant Organization: Example Org\nRegistrant Email: owner@example.cc\n"))
+					_, _ = c.Write([]byte("% Terms apply\nDomain Name: example.cc\nRegistrar: Example Registrar AS\nRegistrar IANA ID: 9999\nCreation Date: 2020-01-15T10:00:00Z\nRegistry Expiry Date: " + whoisExp + "\nUpdated Date: 2026-01-10T00:00:00Z\nName Server: ns1.example.test\nName Server: NS2.EXAMPLE.TEST\nDomain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\nDNSSEC: unsigned\nRegistrant Organization: Example Org\nRegistrant Email: owner@example.cc\n"))
 				case "missing.cc":
 					_, _ = c.Write([]byte("% Terms apply\nNo match for \"MISSING.CC\".\n"))
 				default:
@@ -137,7 +140,7 @@ func setup(t *testing.T) *world {
 		WhoisPort:        whoisPort,
 		RefreshBootstrap: false,
 	}
-	return &world{op: op, ep: contract.Endpoint{Transport: "udp", Address: dnsAddr}, exp: exp}
+	return &world{op: op, ep: contract.Endpoint{Transport: "udp", Address: dnsAddr}, exp: exp, whoisExp: whoisExp}
 }
 
 func fmtSscan(s string, out *int) (int, error) {
@@ -206,7 +209,7 @@ func TestWHOISFallback(t *testing.T) {
 	if res.Source != "whois" || res.Server != "whois.nic.cc.test" || !res.Found {
 		t.Fatalf("%+v", res)
 	}
-	if res.Registrar.Name != "Example Registrar AS" || res.Registrar.IANAID != "9999" || res.Registered != "2020-01-15T10:00:00Z" || res.Expires != "2027-01-15" || res.ExpiresInDays == nil || *res.ExpiresInDays < 100 {
+	if res.Registrar.Name != "Example Registrar AS" || res.Registrar.IANAID != "9999" || res.Registered != "2020-01-15T10:00:00Z" || res.Expires != w.whoisExp || res.ExpiresInDays == nil || *res.ExpiresInDays < 199 || *res.ExpiresInDays > 200 {
 		t.Fatalf("fields: %+v", res)
 	}
 	if strings.Join(res.Nameservers, ",") != "ns1.example.test,ns2.example.test" || !res.NSMismatch {
