@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/miekg/dns"
 
 	"github.com/n0rdy/nordyg/core/internal/bridge"
+	"github.com/n0rdy/nordyg/core/internal/certs"
 	"github.com/n0rdy/nordyg/core/internal/contract"
 	"github.com/n0rdy/nordyg/core/internal/dnssec"
 	"github.com/n0rdy/nordyg/core/internal/testdns"
@@ -130,6 +132,7 @@ type fixture struct {
 	op       *Op
 	root     string
 	resolver string
+	web      map[string]string // web server IP → local TLS listener
 }
 
 func setup(t *testing.T, validator trace.Validator) *fixture {
@@ -225,10 +228,22 @@ func setup(t *testing.T, validator trace.Validator) *fixture {
 		"ns1.signed.test. 300 IN A 192.0.2.51",
 		"ns.test. 300 IN A 192.0.2.2",
 		"ns2.signed.test. 300 IN A 198.51.100.52",
+		"good.test. 300 IN A 192.0.2.80",
+		"www.good.test. 300 IN A 192.0.2.80",
+		"www.good.test. 300 IN A 192.0.2.81",
 	))
 	tc := &transport.Client{}
-	op := &Op{Client: tc, Trace: &trace.Op{Client: tc, AddrFor: addrFor, Validator: validator}, AddrFor: addrFor}
-	return &fixture{op: op, root: root, resolver: resolver}
+	f := &fixture{root: root, resolver: resolver, web: map[string]string{}}
+	f.op = &Op{Client: tc, Trace: &trace.Op{Client: tc, AddrFor: addrFor, Validator: validator}, AddrFor: addrFor,
+		// No web server unless a test starts one: port 1 refuses at once.
+		HTTPSAddrFor: func(ip string) string {
+			if a, ok := f.web[ip]; ok {
+				return a
+			}
+			return "127.0.0.1:1"
+		},
+		Certs: &certs.Inspector{Roots: x509.NewCertPool()}}
+	return f
 }
 
 func (f *fixture) run(t *testing.T, domain string) *Result {
@@ -314,7 +329,7 @@ func TestBrokenZone(t *testing.T) {
 		{"axfr", r.Nameservers.Section, Warn, "ns1.bad.test (192.0.2.21) allows a zone transfer"},
 		{"recursion", r.Nameservers.Section, Warn, "ns2.bad.test (192.0.2.22) resolves names for anyone"},
 		{"child-only silent", r.Nameservers.Section, Fail, "ns3.bad.test (192.0.2.24) does not answer"},
-		{"serials", r.SOA.Section, Warn, "2 on ns1.bad.test (192.0.2.21); 1 on"},
+		{"serials", r.SOA.Section, Warn, "2 on ns1.bad.test (192.0.2.21) and 1 on"},
 		{"glue mismatch", r.Glue.Section, Fail, "ns2.bad.test (192.0.2.22) has no address in common with the zone's own records (192.0.2.99)"},
 		{"no caa", r.CAA.Section, Info, "any certificate authority may issue"},
 	}

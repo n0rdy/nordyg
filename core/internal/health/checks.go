@@ -156,7 +156,7 @@ func checkServers(servers []Server) Nameservers {
 	sec.settle(okMsg)
 	if sec.Verdict.Status == Info {
 		// Only notes, no problems: keep the good news in the verdict.
-		sec.Verdict.Message = okMsg + "; " + sec.Verdict.Message
+		sec.Verdict.Message = okMsg + ". " + strings.ToUpper(sec.Verdict.Message[:1]) + sec.Verdict.Message[1:]
 	}
 	return sec
 }
@@ -203,9 +203,9 @@ func checkSOA(servers []Server, apex string) SOA {
 			parts = append(parts, fmt.Sprintf("%d on %s", g.Serial, strings.Join(g.Servers, ", ")))
 		}
 		if byProvider(sec.Serials) {
-			sec.add(Info, "the serial differs between DNS providers, which is normal when several providers serve the zone, each with its own serial: %s", strings.Join(parts, "; "))
+			sec.add(Info, "the serial differs between DNS providers, which is normal when several providers serve the zone, each with its own serial: %s", strings.Join(parts, " and "))
 		} else {
-			sec.add(Warn, "the nameservers serve different versions of the zone (a change still propagating, or a broken transfer): %s", strings.Join(parts, "; "))
+			sec.add(Warn, "the nameservers serve different versions of the zone (a change still propagating, or a broken transfer): %s", strings.Join(parts, " and "))
 		}
 	}
 	if soa.Retry >= soa.Refresh {

@@ -70,14 +70,16 @@ struct QueryBar: View {
 
                 if model.isRunning {
                     // A plain button: red means "failed" in the results.
-                    Button { model.cancel() } label: { Label("Cancel", systemImage: "stop.fill").frame(minWidth: 72) }
-                        .controlSize(.large)
+                    // Run and Cancel share a size so the bar does not jump.
+                    Button { model.cancel() } label: { Label("Cancel", systemImage: "stop.fill").font(.title3).frame(minWidth: 84) }
+                        .controlSize(.extraLarge)
                 } else {
-                    Button { model.run() } label: { Label("Run", systemImage: "play.fill").frame(minWidth: 72) }
+                    // As tall as the field, with its text size.
+                    Button { model.run() } label: { Label("Run", systemImage: "play.fill").font(.title3.weight(.semibold)).frame(minWidth: 84) }
                         .keyboardShortcut(.defaultAction)
                         .disabled(!model.canRun)
                         .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
+                        .controlSize(.extraLarge)
                         // The accent (the logo's azure): green means "ok/secure" in results.
                 }
             }
@@ -130,6 +132,7 @@ struct EndpointPickerItems: View {
                     ForEach(model.systemEndpoints) { ep in Text(ep.title).tag(Optional(ep)) }
                 }
                 .pickerStyle(.inline).labelsHidden()
+                Button("How this Mac resolves names…") { model.showMacResolvers = true }
             }
         }
         Section("Public resolvers") {
@@ -249,7 +252,7 @@ struct OptionsButton: View {
             }
         }
         .help(changed.isEmpty ? "Query options (all at their defaults)" : "Changed from the defaults: " + changed.joined(separator: ", "))
-        .controlSize(.large)
+        .controlSize(.extraLarge)
         .popover(isPresented: $open) { OptionsView(options: $options, validate: $validate, showsValidate: showsValidate).padding() }
     }
 }

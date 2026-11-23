@@ -359,8 +359,10 @@ struct StalePill: View {
 
 /// What this Mac's own resolver returns, next to what Nordyg got.
 struct SystemViewPill: View {
+    @EnvironmentObject var model: AppModel
     var system: [String]?
     var answers: [String]
+    var name: String = ""
 
     var body: some View {
         if let system {
@@ -369,9 +371,14 @@ struct SystemViewPill: View {
                 // Agreement is the normal case: say it quietly.
                 Meta(text: "your Mac sees the same", help: Glossary.systemView(system, overlap: true))
             } else {
-                Pill(text: system.isEmpty ? "your Mac gets no answer" : "your Mac sees something else",
-                     icon: "desktopcomputer", color: .orange,
-                     help: Glossary.systemView(system, overlap: false))
+                // Say which resolver the Mac asked, and open the full picture on click.
+                let asked = model.macDNS.plan.resolver(for: name).flatMap { $0.resolver.nameservers.first.map { model.macDNS.plan.describe($0) } }
+                Button { model.showMacResolvers = true } label: {
+                    Pill(text: (system.isEmpty ? "your Mac gets no answer" : "your Mac sees something else") + (asked.map { ", it asks \($0)" } ?? ""),
+                         icon: "desktopcomputer", color: .orange,
+                         help: Glossary.systemView(system, overlap: false) + "\nClick to see how this Mac resolves names.")
+                }
+                .buttonStyle(.plain)
             }
         }
     }

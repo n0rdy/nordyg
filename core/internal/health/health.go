@@ -15,6 +15,7 @@ import (
 	"github.com/miekg/dns"
 
 	"github.com/n0rdy/nordyg/core/internal/bridge"
+	"github.com/n0rdy/nordyg/core/internal/certs"
 	"github.com/n0rdy/nordyg/core/internal/contract"
 	"github.com/n0rdy/nordyg/core/internal/dnssec"
 	"github.com/n0rdy/nordyg/core/internal/trace"
@@ -199,6 +200,7 @@ type Result struct {
 	Glue        Glue        `json:"glue"`
 	DNSSEC      DNSSEC      `json:"dnssec"`
 	CAA         CAA         `json:"caa"`
+	HTTPS       HTTPS       `json:"https"`
 	Overall     Finding     `json:"overall"`
 }
 
@@ -209,6 +211,11 @@ type Op struct {
 	// AddrFor maps a nameserver IP to ip:port. Defaults to port 53; tests
 	// remap to local ports.
 	AddrFor func(ip string) string
+	// HTTPSAddrFor maps a web server IP to ip:port. Defaults to port 443.
+	HTTPSAddrFor func(ip string) string
+	// Certs inspects TLS certificates; nil means the system trust store and
+	// CRLs fetched through the chosen resolver.
+	Certs *certs.Inspector
 }
 
 // Register attaches the op to d.
@@ -249,11 +256,14 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	res.Glue.Entries = []GlueEntry{}
 	res.DNSSEC.DS = []contract.Record{}
 	res.CAA.Records = []CAARecord{}
+	res.HTTPS.Hosts = []HTTPSHost{}
 
 	// CAA depends only on the resolver; run it alongside everything else.
+	// HTTPS needs CAA (issuer check) and the apex, so it waits for both.
 	var wg sync.WaitGroup
+	caaDone := make(chan struct{})
 	wg.Add(1)
-	go func() { defer wg.Done(); res.CAA = checkCAA(ctx, r, domain) }()
+	go func() { defer wg.Done(); defer close(caaDone); res.CAA = checkCAA(ctx, r, domain) }()
 	defer wg.Wait()
 
 	tr, hops, traceErr := op.trace(ctx, p, domain)
@@ -289,6 +299,7 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	}
 	if ref == nil || !exists {
 		wg.Wait()
+		res.HTTPS.Verdict = Finding{Info, "not checked: the delegation is broken"}
 		res.skipAfterDelegation()
 		res.finish()
 		return res, nil
@@ -297,6 +308,13 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 		d.add(Fail, "the trace to %s's SOA failed after the delegation: %s", prose(apex), traceErr.Error())
 	}
 	d.ParentNS = append(d.ParentNS, ref.Nameservers...)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-caaDone
+		res.HTTPS = op.checkHTTPS(ctx, p, r, o, apex, res.CAA)
+	}()
 
 	// Round one: every name the parent delegates to.
 	addrs := map[string][]string{}
@@ -418,13 +436,13 @@ func (r *Result) finish() {
 	if r.Delegation.Verdict.Status == "" {
 		r.Delegation.settle("")
 	}
-	for _, s := range []*Section{&r.Delegation.Section, &r.Nameservers.Section, &r.SOA.Section, &r.Glue.Section, &r.DNSSEC.Section, &r.CAA.Section} {
+	for _, s := range []*Section{&r.Delegation.Section, &r.Nameservers.Section, &r.SOA.Section, &r.Glue.Section, &r.DNSSEC.Section, &r.CAA.Section, &r.HTTPS.Section} {
 		if s.Findings == nil {
 			s.Findings = []Finding{}
 		}
 	}
 	fails, warns := 0, 0
-	for _, v := range []Finding{r.Delegation.Verdict, r.Nameservers.Verdict, r.SOA.Verdict, r.Glue.Verdict, r.DNSSEC.Verdict, r.CAA.Verdict} {
+	for _, v := range []Finding{r.Delegation.Verdict, r.Nameservers.Verdict, r.SOA.Verdict, r.Glue.Verdict, r.DNSSEC.Verdict, r.CAA.Verdict, r.HTTPS.Verdict} {
 		switch v.Status {
 		case Fail:
 			fails++

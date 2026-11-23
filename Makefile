@@ -12,7 +12,7 @@
 #
 # Go is pinned via GOTOOLCHAIN so the version on PATH does not matter.
 
-GO_VERSION      := 1.27.0
+GO_VERSION      := 1.27.4
 export GOTOOLCHAIN := go$(GO_VERSION)
 export CGO_ENABLED := 1
 
@@ -64,7 +64,7 @@ $(APP_HDR): $(BUILD)/libnordyg.h
 archive: $(BUILD)/libnordyg.a $(APP_HDR)
 
 SMOKE_SRC := app/smoke/main.swift app/Nordyg/Core/CoreBridge.swift app/Nordyg/Core/Contract.swift \
-             app/Nordyg/Core/JSONValue.swift app/Nordyg/Core/SystemResolvers.swift app/Nordyg/Core/SystemLookup.swift
+             app/Nordyg/Core/JSONValue.swift app/Nordyg/Core/SystemResolvers.swift app/Nordyg/Core/SystemLookup.swift app/Nordyg/Core/DNSConfiguration.swift
 
 $(SMOKE): archive $(SMOKE_SRC)
 	@mkdir -p app/build

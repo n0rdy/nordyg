@@ -378,6 +378,28 @@ struct HealthGlue: Codable, Hashable { var entries: [HealthGlueEntry]; var verdi
 struct HealthDNSSEC: Codable, Hashable { var status: String; var ds: [Record]; var result: DNSSECResult?; var verdict: Verdict; var findings: [Verdict] }
 struct HealthCAARecord: Codable, Hashable { var flags: Int; var tag: String; var value: String }
 struct HealthCAA: Codable, Hashable { var foundAt: String?; var records: [HealthCAARecord]; var verdict: Verdict; var findings: [Verdict] }
+struct TLSCert: Codable, Hashable { var subject: String; var issuer: String; var names: [String]?; var notBefore: String; var notAfter: String; var sha256: String; var spkiSha256: String }
+struct TLSRevocation: Codable, Hashable { var subject: String; var revokedAt: String; var reason: String }
+/// What one web server address presented on port 443 (certs.Probe).
+struct TLSProbe: Codable, Hashable {
+    var name: String
+    var ip: String
+    var port: Int
+    var connected: Bool
+    var skipped: Bool
+    var error: String?
+    var tlsVersion: String?
+    var chain: [TLSCert]
+    var trusted: Bool
+    var trustError: String?
+    var nameMatch: Bool
+    var expiresInDays: Int
+    var revoked: [TLSRevocation]
+    var revocationChecked: Bool
+    var revocationNote: String?
+}
+struct HealthHTTPSHost: Codable, Hashable { var name: String; var tlsa: [String]; var tlsaStatus: String?; var tlsaMatch: Bool?; var tlsaError: String?; var servers: [TLSProbe] }
+struct HealthHTTPS: Codable, Hashable { var hosts: [HealthHTTPSHost]; var verdict: Verdict; var findings: [Verdict] }
 struct HealthResult: Codable, Hashable {
     var domain: String
     var zone: String
@@ -387,6 +409,7 @@ struct HealthResult: Codable, Hashable {
     var glue: HealthGlue
     var dnssec: HealthDNSSEC
     var caa: HealthCAA
+    var https: HealthHTTPS
     var overall: Verdict
 }
 
@@ -408,6 +431,9 @@ struct DKIMSection: Codable, Hashable { var selectors: [DKIMSelector]; var wildc
 struct DMARCSection: Codable, Hashable { var name: String; var records: [String]; var decoded: JSONValue?; var verdict: Verdict }
 struct MTASTSPolicy: Codable, Hashable { var version: String; var mode: String; var mx: [String]; var maxAge: Int }
 struct MTASTSSection: Codable, Hashable { var name: String; var record: String?; var id: String?; var policyUrl: String?; var policyText: String?; var policy: MTASTSPolicy?; var error: String?; var verdict: Verdict }
+struct DANEServer: Codable, Hashable { var ip: String; var checked: Bool; var match: Bool; var skipped: Bool?; var error: String? }
+struct DANEHost: Codable, Hashable { var exchange: String; var tlsa: [String]; var status: String?; var error: String?; var servers: [DANEServer] }
+struct DANESection: Codable, Hashable { var mxStatus: String?; var hosts: [DANEHost]; var findings: [Verdict]; var verdict: Verdict }
 struct BIMISection: Codable, Hashable { var name: String; var record: String?; var logo: String?; var evidence: String?; var verdict: Verdict }
 struct DNSBLCheck: Codable, Hashable { var ip: String; var zone: String; var listed: Bool; var blocked: Bool; var response: String?; var error: String? }
 struct DNSBLSection: Codable, Hashable { var checks: [DNSBLCheck]; var verdict: Verdict }
@@ -418,6 +444,8 @@ struct EmailResult: Codable, Hashable {
     var dkim: DKIMSection
     var dmarc: DMARCSection
     var mtaSts: MTASTSSection
+    var dane: DANESection
+    var transport: Verdict
     var bimi: BIMISection
     var dnsbl: DNSBLSection
     var overall: Verdict

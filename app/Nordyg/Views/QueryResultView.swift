@@ -40,7 +40,7 @@ struct QueryResultView: View {
                 }
                 if model.systemView != nil, Self.sameName(model.systemViewName, r.questionSent.name) {
                     Dot()
-                    SystemViewPill(system: model.systemView, answers: results.flatMap(\.message.addresses))
+                    SystemViewPill(system: model.systemView, answers: results.flatMap(\.message.addresses), name: r.questionSent.name)
                 }
                 // Where "is it the same elsewhere?" comes up. Not for ALL,
                 // which is a one-resolver type.

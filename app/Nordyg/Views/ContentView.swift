@@ -17,6 +17,9 @@ struct ContentView: View {
                 ResultArea()
             }
         }
+        .sheet(isPresented: $model.showMacResolvers) {
+            MacResolversSheet(monitor: model.macDNS).environmentObject(model)
+        }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 ModeSwitcher(mode: $model.mode)

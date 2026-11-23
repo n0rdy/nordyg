@@ -113,6 +113,36 @@ func Get(ctx context.Context, rawURL, accept string, r Resolver, roots *tls.Conf
 	return nil, errors.New("too many redirects")
 }
 
+// GetSigned fetches an object that carries its own signature, such as a
+// certificate revocation list. CAs publish those over plain HTTP by design,
+// so http is allowed here, unlike Get; the caller must verify the signature
+// before trusting a single byte. No redirects are followed.
+func GetSigned(ctx context.Context, rawURL string, r Resolver) ([]byte, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("unsupported URL %s", rawURL)
+	}
+	ips, err := r(ctx, u.Hostname())
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", u.Hostname(), err)
+	}
+	port := u.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443"}[u.Scheme]
+	}
+	resp, err := getOnce(ctx, u, ips, port, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != http.StatusOK {
+		return nil, fmt.Errorf("%s answered HTTP %d", u.Hostname(), resp.Status)
+	}
+	return resp.Body, nil
+}
+
 type rawResponse struct {
 	Response
 	location string

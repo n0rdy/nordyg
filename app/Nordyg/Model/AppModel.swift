@@ -22,9 +22,9 @@ extension Mode {
         switch self {
         case .query: return "Ask one resolver, or several at once, and see everything they returned."
         case .trace: return "Follow the delegation from the root servers to the answer."
-        case .email: return "Check a mail domain's MX, SPF, DKIM, DMARC, MTA-STS, BIMI and blocklists."
+        case .email: return "Check a mail domain's MX, SPF, DKIM, DMARC, MTA-STS, DANE, BIMI and blocklists."
         case .registry: return "See who registered a domain, when it expires and its status, via RDAP or WHOIS."
-        case .health: return "Check that a domain's DNS is delegated and served correctly."
+        case .health: return "Check that a domain's DNS is delegated and served correctly, and its website certificate."
         }
     }
 
@@ -36,11 +36,11 @@ extension Mode {
         case .trace:
             return "Follow a name from the root servers down to the server that holds the answer, one hop at a time, with no cache in the way."
         case .email:
-            return "Check whether a domain's mail is set up right: MX, SPF, DKIM, DMARC, MTA-STS, BIMI and blocklists, each with a verdict."
+            return "Check whether a domain's mail is set up right: MX, SPF, DKIM, DMARC, MTA-STS, DANE, BIMI and blocklists, each with a verdict."
         case .registry:
             return "See who registered a domain, when it expires and its status, from RDAP, or from WHOIS where a TLD has no RDAP."
         case .health:
-            return "Check that a domain's DNS is delegated and served correctly, by asking every one of its nameservers directly."
+            return "Check that a domain's DNS is delegated and served correctly, by asking every one of its nameservers directly, and that the certificate its website serves is valid."
         }
     }
 
@@ -138,6 +138,10 @@ final class AppModel: ObservableObject {
     @Published var severalResolvers = false {
         didSet { if severalResolvers, type == "ALL" { type = "A" } }
     }
+    /// This Mac's resolver configuration, kept live.
+    let macDNS = MacDNSMonitor()
+    /// "How this Mac resolves names" is open.
+    @Published var showMacResolvers = false
     /// The several-resolvers checklist popover is open.
     @Published var showResolverChecklist = false
     /// The compared resolver whose full answer is open (index into results).

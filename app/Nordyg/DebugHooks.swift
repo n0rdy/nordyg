@@ -28,6 +28,8 @@ import SwiftUI
 ///     export <fmt>         write Copy as <fmt> to <container tmp>/nordyg-export.txt
 ///     tab <name>           result tab of the current mode (records, details,
 ///                          dnssec, raw; hops, final for Trace)
+///     cards <open|auto|title>  open every report card's details on the next
+///                          run, or only the card with that title
 ///     snapshot             write <container tmp>/nordyg-snapshot.png once idle
 ///     snapshot active      same, after bringing the window to the front, so
 ///                          accent colours show as in a focused window
@@ -37,6 +39,8 @@ import SwiftUI
 enum DebugHooks {
     static let name = Notification.Name("foo.n0rdy.nordyg.debug")
     static let selectRecord = Notification.Name("nordyg.debug.selectRecord")
+    /// Read by CheckCard when it is created.
+    nonisolated(unsafe) static var openCards: String? = nil
 
     static func install(model: AppModel) {
         DistributedNotificationCenter.default().addObserver(forName: name, object: nil, queue: .main) { note in
@@ -73,6 +77,14 @@ enum DebugHooks {
             else if parts.count == 1 { model.setupPreset = parts[0] }
             else { model.setupPreset = nil }
         case "unpreset": model.clearPreset(arg)
+        case "macdns": model.showMacResolvers = arg != "off"
+        case "dumpdns":
+            // Writes the system resolver configuration as read in the sandbox.
+            let lines = (DNSConfiguration.current() ?? []).map { r in
+                "\(r.scoped ? "scoped" : "resolver") domain=\(r.domain ?? "-") ns=\(r.nameservers) port=\(r.port) if=\(r.interface ?? "-") order=\(r.order) flags=0x\(String(r.flags, radix: 16)) options=\(r.options ?? "-") search=\(r.searchDomains)"
+            }
+            let text = DNSConfiguration.current() == nil ? "UNAVAILABLE" : lines.joined(separator: "\n")
+            try? text.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("nordyg-dns.txt"), atomically: true, encoding: .utf8)
         case "checklist": model.showResolverChecklist = arg != "off"
         case "drill": model.compareDetail = Int(arg)
         case "name": model.name = arg
@@ -99,6 +111,7 @@ enum DebugHooks {
                 }
             }
             model.compareSelection = set
+        case "cards": openCards = arg == "auto" ? nil : arg
         case "export":
             Task { @MainActor in
                 let out = await model.exportCommand(arg) ?? "(nil)"

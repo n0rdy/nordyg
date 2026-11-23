@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/miekg/dns"
 
@@ -151,15 +152,19 @@ type DNSBLSection struct {
 
 // Result is the op output.
 type Result struct {
-	Domain  string        `json:"domain"`
-	MX      MXSection     `json:"mx"`
-	SPF     SPFSection    `json:"spf"`
-	DKIM    DKIMSection   `json:"dkim"`
-	DMARC   DMARCSection  `json:"dmarc"`
-	MTASTS  MTASTSSection `json:"mta_sts"`
-	BIMI    BIMISection   `json:"bimi"`
-	DNSBL   DNSBLSection  `json:"dnsbl"`
-	Overall Verdict       `json:"overall"`
+	Domain string        `json:"domain"`
+	MX     MXSection     `json:"mx"`
+	SPF    SPFSection    `json:"spf"`
+	DKIM   DKIMSection   `json:"dkim"`
+	DMARC  DMARCSection  `json:"dmarc"`
+	MTASTS MTASTSSection `json:"mta_sts"`
+	DANE   DANESection   `json:"dane"`
+	// Transport is the transport security card's verdict: MTA-STS and DANE
+	// together, counted once in the overall.
+	Transport Verdict      `json:"transport"`
+	BIMI      BIMISection  `json:"bimi"`
+	DNSBL     DNSBLSection `json:"dnsbl"`
+	Overall   Verdict      `json:"overall"`
 }
 
 // DefaultSelectors are tried when the caller gives none.
@@ -195,6 +200,14 @@ type Op struct {
 	FetchPolicy func(ctx context.Context, host string, ips []string) (string, error)
 	// Zones overrides DNSBLZones (tests).
 	Zones []string
+	// SMTPAddrFor maps an MX address to ip:port for the DANE check.
+	// Defaults to port 25; tests replace it.
+	SMTPAddrFor func(ip string) string
+	// SMTPTimeout bounds each connection attempt (default 5 s).
+	SMTPTimeout time.Duration
+	// Validator validates TLSA and MX records for DANE; nil means the
+	// embedded root anchors.
+	Validator Validator
 }
 
 // Register attaches the op to d.
@@ -243,7 +256,11 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	run := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }
 	run(func() {
 		res.MX = checkMX(ctx, r, domain)
+		var dane sync.WaitGroup
+		dane.Add(1)
+		go func() { defer dane.Done(); res.DANE = op.checkDANE(ctx, r, domain, res.MX) }()
 		res.DNSBL = checkDNSBL(ctx, r, res.MX, zones)
+		dane.Wait()
 	})
 	run(func() { res.SPF = checkSPF(ctx, r, domain) })
 	run(func() { res.DKIM = checkDKIM(ctx, r, domain, selectors) })
@@ -261,6 +278,7 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	if res.MX.NullMX && res.DKIM.Wildcard {
 		res.DKIM.Verdict = Verdict{OK, "signs no mail: every selector returns a revoked key, as a domain that sends none should"}
 	}
+	res.Transport = transportVerdict(res.MTASTS.Verdict, res.DANE.Verdict)
 	res.Overall = overall(res)
 	return res, nil
 }
@@ -281,9 +299,28 @@ func humanSeconds(s int) string {
 	return fmt.Sprintf("%d s", s)
 }
 
+// transportVerdict joins MTA-STS and DANE: the worse of the two, except that
+// either one set up correctly is enough and both missing is one sentence.
+func transportVerdict(sts, dane Verdict) Verdict {
+	rank := map[string]int{OK: 0, Info: 1, Warn: 2, Fail: 3}
+	stsOff := sts.Status == Info && strings.HasPrefix(sts.Message, "not configured")
+	daneOff := dane.Status == Info && (strings.HasPrefix(dane.Message, "not configured") || strings.HasPrefix(dane.Message, "not applicable"))
+	switch {
+	case stsOff && daneOff:
+		return Verdict{Info, "neither MTA-STS nor DANE is set up. Both are optional and make senders require TLS to your MX hosts"}
+	case stsOff:
+		return dane
+	case daneOff:
+		return sts
+	case rank[dane.Status] > rank[sts.Status]:
+		return dane
+	}
+	return sts
+}
+
 func overall(r *Result) Verdict {
 	fails, warns := 0, 0
-	for _, v := range []Verdict{r.MX.Verdict, r.SPF.Verdict, r.DKIM.Verdict, r.DMARC.Verdict, r.MTASTS.Verdict, r.BIMI.Verdict, r.DNSBL.Verdict} {
+	for _, v := range []Verdict{r.MX.Verdict, r.SPF.Verdict, r.DKIM.Verdict, r.DMARC.Verdict, r.Transport, r.BIMI.Verdict, r.DNSBL.Verdict} {
 		switch v.Status {
 		case Fail:
 			fails++
@@ -393,7 +430,12 @@ func checkMX(ctx context.Context, r *resolver, domain string) MXSection {
 			mxs = append(mxs, mx)
 		}
 	}
-	sort.Slice(mxs, func(a, b int) bool { return mxs[a].Preference < mxs[b].Preference })
+	sort.Slice(mxs, func(a, b int) bool {
+		if mxs[a].Preference != mxs[b].Preference {
+			return mxs[a].Preference < mxs[b].Preference
+		}
+		return mxs[a].Mx < mxs[b].Mx
+	})
 	if len(mxs) == 1 && mxs[0].Mx == "." {
 		sec.NullMX = true
 		sec.Hosts = append(sec.Hosts, MXHost{Preference: 0, Exchange: ".", Addresses: []string{}, PTR: []PTRCheck{}})

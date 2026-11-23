@@ -21,6 +21,7 @@ struct HealthView: View {
                     GlueCard(section: result.glue)
                     ZoneDNSSECCard(section: result.dnssec)
                     CAACard(section: result.caa)
+                    HTTPSCard(section: result.https)
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -271,6 +272,85 @@ struct CAACard: View {
     }
 }
 
+/// The certificate the zone and www serve on port 443, address by address.
+struct HTTPSCard: View {
+    var section: HealthHTTPS
+    var body: some View {
+        CheckCard("Website certificate", subtitle: "HTTPS", verdict: section.verdict, hasDetails: !section.hosts.isEmpty) {
+            ForEach(section.hosts, id: \.name) { h in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(prose(h.name)).fontWeight(.semibold)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
+                            GridRow {
+                                ForEach(["", "address", "issued by", "valid until", "certificate"], id: \.self) { Text($0).foregroundStyle(.secondary) }
+                            }
+                            ForEach(h.servers.filter { !$0.skipped }, id: \.ip) { s in
+                                GridRow {
+                                    Image(systemName: VerdictStyle.icon(Self.status(s))).foregroundStyle(VerdictStyle.color(Self.status(s)))
+                                    Text(s.ip).textSelection(.enabled)
+                                    Text(s.chain.first?.issuer ?? "–")
+                                    Text(verbatim: s.chain.first.map { Self.date($0.notAfter) } ?? "–")
+                                    Text(Self.label(s)).foregroundStyle(Self.status(s) == "ok" ? Color.secondary : VerdictStyle.color(Self.status(s)))
+                                }
+                            }
+                        }
+                    }
+                    if let note = Self.revocation(h.servers) {
+                        Text(note).font(.callout).foregroundStyle(.secondary)
+                    }
+                    if !h.tlsa.isEmpty {
+                        Text(Self.dane(h)).font(.callout).foregroundStyle(.secondary)
+                        ForEach(h.tlsa, id: \.self) { Text(verbatim: "TLSA \($0)").font(.callout.monospaced()).textSelection(.enabled) }
+                    }
+                }
+                .padding(.bottom, 4)
+            }
+            FindingList(findings: section.findings, verdict: section.verdict)
+        }
+    }
+
+    static func status(_ s: TLSProbe) -> String {
+        if !s.connected { return "warn" }
+        if !s.revoked.isEmpty || !s.trusted || !s.nameMatch || s.expiresInDays < 0 { return "fail" }
+        return s.expiresInDays < 14 ? "warn" : "ok"
+    }
+
+    static func label(_ s: TLSProbe) -> String {
+        if !s.connected { return "no answer on port 443" }
+        if !s.revoked.isEmpty { return "intermediate revoked" }
+        if !s.nameMatch { return "wrong name" }
+        if s.expiresInDays < 0 { return "expired" }
+        if !s.trusted { return "not trusted" }
+        return s.expiresInDays == 1 ? "valid, 1 day left" : "valid, \(s.expiresInDays) days left"
+    }
+
+    /// One line on whether the intermediates were checked for revocation,
+    /// the check that catches a CA's own key being compromised.
+    static func revocation(_ servers: [TLSProbe]) -> String? {
+        let connected = servers.filter(\.connected)
+        guard !connected.isEmpty, connected.allSatisfy({ $0.revoked.isEmpty }) else { return nil }
+        if connected.allSatisfy(\.revocationChecked) { return "Intermediate certificates checked against their CA's revocation list" }
+        if let note = connected.compactMap(\.revocationNote).first { return "Revocation not checked: \(note)" }
+        return nil
+    }
+
+    static func dane(_ h: HealthHTTPSHost) -> String {
+        let n = h.tlsa.count == 1 ? "1 TLSA record" : "\(h.tlsa.count) TLSA records"
+        switch (h.tlsaStatus, h.tlsaMatch) {
+        case ("secure", true?): return "DANE: \(n), signed, and the certificate matches"
+        case ("secure", false?): return "DANE: \(n), signed, but no certificate matches"
+        case ("secure", nil): return "DANE: \(n), signed"
+        default: return "DANE: \(n), not signed, so clients ignore them"
+        }
+    }
+
+    static func date(_ iso: String) -> String {
+        guard let d = ISO8601DateFormatter().date(from: iso) else { return iso }
+        return d.formatted(date: .abbreviated, time: .omitted)
+    }
+}
+
 /// The pasteable report: Markdown with every verdict and finding.
 enum HealthReport {
     static func markdown(_ r: HealthResult) -> String {
@@ -283,6 +363,7 @@ enum HealthReport {
             ("Glue", r.glue.verdict, r.glue.findings),
             ("DNSSEC", r.dnssec.verdict, r.dnssec.findings),
             ("CAA", r.caa.verdict, r.caa.findings),
+            ("HTTPS", r.https.verdict, r.https.findings),
         ]
         for (title, v, findings) in sections {
             s += "## \(title): \(VerdictStyle.label(v.status))\n\n\(v.message)\n\n"

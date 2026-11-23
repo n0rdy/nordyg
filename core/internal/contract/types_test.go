@@ -68,11 +68,11 @@ func TestParseType(t *testing.T) {
 }
 
 func TestQuestionResolve(t *testing.T) {
-	r, err := Question{Name: "n0rdy.foo", Type: "a"}.Resolve()
-	if err != nil || r.Name != "n0rdy.foo." || r.Type != dns.TypeA || r.Class != dns.ClassINET {
+	r, err := Question{Name: "example.com", Type: "a"}.Resolve()
+	if err != nil || r.Name != "example.com." || r.Type != dns.TypeA || r.Class != dns.ClassINET {
 		t.Fatalf("got %+v, %v", r, err)
 	}
-	if q := r.Question(); q.Name != "n0rdy.foo." || q.Type != "A" || q.Class != "IN" {
+	if q := r.Question(); q.Name != "example.com." || q.Type != "A" || q.Class != "IN" {
 		t.Fatalf("question_sent: %+v", q)
 	}
 

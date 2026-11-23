@@ -26,7 +26,5 @@
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2026 Do Not Panic AS. AGPL-3.0.</string>
 </dict>
 </plist>

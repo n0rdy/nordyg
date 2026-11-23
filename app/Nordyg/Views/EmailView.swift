@@ -17,7 +17,7 @@ struct EmailView: View {
                     SPFCard(section: result.spf)
                     DKIMCard(section: result.dkim)
                     DMARCCard(section: result.dmarc)
-                    MTASTSCard(section: result.mtaSts)
+                    TransportCard(sts: result.mtaSts, dane: result.dane, verdict: result.transport)
                     BIMICard(section: result.bimi)
                     DNSBLCard(section: result.dnsbl)
                 }
@@ -46,7 +46,11 @@ struct CheckCard<Content: View>: View {
         self.verdict = verdict
         self.hasDetails = hasDetails
         self.details = details()
-        _open = State(initialValue: hasDetails && (startOpen || verdict.status == "fail" || verdict.status == "warn"))
+        var initial = hasDetails && (startOpen || verdict.status == "fail" || verdict.status == "warn")
+        #if DEBUG
+        if let o = DebugHooks.openCards { initial = hasDetails && (o == "open" || o == title) }
+        #endif
+        _open = State(initialValue: initial)
     }
 
     var body: some View {
@@ -226,19 +230,99 @@ struct DMARCCard: View {
     }
 }
 
-struct MTASTSCard: View {
-    var section: MTASTSSection
+/// MTA-STS and DANE: the two ways a domain makes senders require TLS.
+struct TransportCard: View {
+    var sts: MTASTSSection
+    var dane: DANESection
+    var verdict: Verdict
+
+    var stsDetails: Bool { sts.record != nil || sts.policyUrl != nil || sts.policyText != nil || sts.error != nil }
+    var daneHosts: [DANEHost] { dane.hosts.filter { !$0.tlsa.isEmpty || $0.error != nil } }
+
     var body: some View {
-        CheckCard("Transport security", subtitle: "MTA-STS", verdict: section.verdict,
-                  hasDetails: section.record != nil || section.policyUrl != nil || section.policyText != nil || section.error != nil) {
-            if let r = section.record { Text(r).textSelection(.enabled) }
-            if let u = section.policyUrl { Text(u).foregroundStyle(.secondary) }
-            if let t = section.policyText {
-                Text(t.trimmingCharacters(in: .whitespacesAndNewlines))
-                    .padding(6).background(Color.secondary.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 4))
-                    .textSelection(.enabled)
+        CheckCard("Transport security", subtitle: "MTA-STS and DANE", verdict: verdict, hasDetails: stsDetails || !daneHosts.isEmpty) {
+            if stsDetails {
+                Part(title: "MTA-STS", verdict: sts.verdict, shown: verdict != sts.verdict)
+                if let r = sts.record { Text(r).textSelection(.enabled) }
+                if let u = sts.policyUrl { Text(u).foregroundStyle(.secondary) }
+                if let t = sts.policyText {
+                    Text(t.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .padding(6).background(Color.secondary.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 4))
+                        .textSelection(.enabled)
+                }
+                if let e = sts.error { Text(e).foregroundStyle(.red) }
             }
-            if let e = section.error { Text(e).foregroundStyle(.red) }
+            if !daneHosts.isEmpty {
+                Part(title: "DANE", verdict: dane.verdict, shown: verdict != dane.verdict)
+                    .padding(.top, stsDetails ? 6 : 0)
+                // Hosts usually share one set of records: list it once per set.
+                ForEach(Self.groups(daneHosts), id: \.self) { g in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Text(g.map { prose($0.exchange) }.joined(separator: ", ")).fontWeight(.semibold)
+                            if g[0].error != nil {
+                                Text("TLSA lookup failed").font(.callout).foregroundStyle(.orange)
+                            } else {
+                                Text(g[0].status == "secure" ? "signed" : "not signed").font(.callout)
+                                    .foregroundStyle(g[0].status == "secure" ? Color.secondary : Color.orange)
+                            }
+                        }
+                        ForEach(g[0].tlsa, id: \.self) { Text(verbatim: "TLSA \($0)").textSelection(.enabled) }
+                        // When port 25 was blocked for every server the verdict
+                        // already says so, so rows would only repeat it.
+                        if reachedAny {
+                            ForEach(g.flatMap { h in h.servers.filter { $0.skipped != true }.map { (h.exchange, $0) } }, id: \.1.ip) { host, s in
+                                HStack(spacing: 8) {
+                                    Text(s.ip).textSelection(.enabled)
+                                    if g.count > 1 { Text(prose(host)).foregroundStyle(.secondary) }
+                                    Text(Self.label(s)).font(.callout).foregroundStyle(s.checked && !s.match ? Color.red : Color.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                FindingList(findings: dane.findings, verdict: verdict)
+            }
+        }
+    }
+
+    var reachedAny: Bool { dane.hosts.contains { $0.servers.contains(where: \.checked) } }
+
+    /// Hosts with the same records and status, in MX order.
+    static func groups(_ hosts: [DANEHost]) -> [[DANEHost]] {
+        var out: [[DANEHost]] = []
+        for h in hosts {
+            if let i = out.firstIndex(where: { Set($0[0].tlsa) == Set(h.tlsa) && $0[0].status == h.status && $0[0].error == h.error }) {
+                out[i].append(h)
+            } else {
+                out.append([h])
+            }
+        }
+        return out
+    }
+
+    static func label(_ s: DANEServer) -> String {
+        if !s.checked { return "port 25 not reachable from this network" }
+        if let e = s.error { return e }
+        return s.match ? "certificate matches" : "certificate matches no TLSA record"
+    }
+
+    /// A sub-heading with that part's own verdict, when it is not the card's.
+    struct Part: View {
+        var title: String
+        var verdict: Verdict
+        var shown: Bool
+        var body: some View {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).fontWeight(.semibold)
+                if shown {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: VerdictStyle.icon(verdict.status)).foregroundStyle(VerdictStyle.color(verdict.status))
+                        Text(verdict.message)
+                    }
+                    .font(.callout)
+                }
+            }
         }
     }
 }

@@ -60,8 +60,8 @@ struct Smoke {
         check(outcome == "cancelled" || outcome == "swift-cancel", "cancel aborts an in-flight query (\(outcome))")
 
         // 7. export needs no network and round-trips Options encoding.
-        let exp: ExportResult = try await core.call("export", ExportParams(question: Question(name: "n0rdy.foo", type: "MX", qclass: nil), endpoint: Endpoint(transport: "dot", address: "9.9.9.9:853", tlsName: "dns.quad9.net", url: nil, method: nil, label: nil), options: Options(dnssecOk: false, timeoutMs: 2000), format: "dig"))
-        check(exp.command == "dig @9.9.9.9 n0rdy.foo MX +tls +tls-hostname=dns.quad9.net +timeout=2", "export encodes options: \(exp.command)")
+        let exp: ExportResult = try await core.call("export", ExportParams(question: Question(name: "example.com", type: "MX", qclass: nil), endpoint: Endpoint(transport: "dot", address: "9.9.9.9:853", tlsName: "dns.quad9.net", url: nil, method: nil, label: nil), options: Options(dnssecOk: false, timeoutMs: 2000), format: "dig"))
+        check(exp.command == "dig @9.9.9.9 example.com MX +tls +tls-hostname=dns.quad9.net +timeout=2", "export encodes options: \(exp.command)")
 
         if ProcessInfo.processInfo.environment["NORDYG_SMOKE_NET"] == "1" {
             let cf = Endpoint(transport: "dot", address: "1.1.1.1:853", tlsName: "cloudflare-dns.com", url: nil, method: nil, label: "Cloudflare DoT")
@@ -78,7 +78,7 @@ struct Smoke {
             check(spf != nil, "SPF record decoded (\(spf?.decoded?["lookup_count"]?.display ?? "?") lookups)")
 
             // 10. compare groups decode.
-            let cmp: CompareResult = try await core.call("compare", CompareParams(question: Question(name: "n0rdy.foo", type: "A", qclass: nil), endpoints: [Endpoint(transport: "udp", address: "1.1.1.1:53", tlsName: nil, url: nil, method: nil, label: "Cloudflare"), Endpoint(transport: "udp", address: "8.8.8.8:53", tlsName: nil, url: nil, method: nil, label: "Google")], options: Options(), bootstrap: []))
+            let cmp: CompareResult = try await core.call("compare", CompareParams(question: Question(name: "example.com", type: "A", qclass: nil), endpoints: [Endpoint(transport: "udp", address: "1.1.1.1:53", tlsName: nil, url: nil, method: nil, label: "Cloudflare"), Endpoint(transport: "udp", address: "8.8.8.8:53", tlsName: nil, url: nil, method: nil, label: "Google")], options: Options(), bootstrap: []))
             check(cmp.results.count == 2 && !cmp.groups.isEmpty, "compare decodes (consistent=\(cmp.consistent), \(cmp.groups.count) groups)")
 
             // 11. trace decodes with referrals and validation.
@@ -95,17 +95,25 @@ struct Smoke {
             check(em.mx.verdict.status != "fail" && em.spf.verdict.status != "fail" && em.dmarc.verdict.status == "ok" && em.spf.totalLookups > 0,
                   "email report decodes (overall \(em.overall.status): mx \(em.mx.verdict.status), spf \(em.spf.totalLookups) lookups \(em.spf.verdict.status), dkim \(em.dkim.verdict.status), dmarc \(em.dmarc.verdict.status), mta-sts \(em.mtaSts.verdict.status), bimi \(em.bimi.verdict.status), dnsbl \(em.dnsbl.verdict.status))")
             print("     \(em.overall.message)")
+            let dn: EmailResult = try await core.call("email", EmailParams(domain: "posteo.de", endpoint: cf, options: Options(), bootstrap: [], extraDkimSelectors: []))
+            check(dn.dane.mxStatus == "secure" && !dn.dane.hosts.isEmpty && dn.dane.hosts.allSatisfy { $0.status == "secure" && !$0.tlsa.isEmpty } && dn.dane.verdict.status == "ok",
+                  "dane decodes for posteo.de (\(dn.dane.verdict.message))")
+            print("     transport: \(dn.transport.status) \(dn.transport.message)")
 
             // 13e. zone health from the real root servers, decoded through the Swift mirror.
             let hz: HealthResult = try await core.call("health", HealthParams(domain: "cloudflare.com", endpoint: cf, options: Options(), bootstrap: []))
             check(hz.zone == "cloudflare.com." && hz.delegation.verdict.status == "ok" && hz.nameservers.servers.contains { $0.authoritative } && hz.dnssec.status == "secure" && hz.soa.record != nil,
                   "health report decodes (overall \(hz.overall.status): \(hz.nameservers.servers.count) addresses, dnssec \(hz.dnssec.status), caa \(hz.caa.verdict.status))")
             print("     \(hz.overall.message)")
+            for f in hz.https.findings { print("     https \(f.status): \(f.message)") }
+            for h in hz.https.hosts { for sv in h.servers where !sv.skipped { print("     \(h.name) \(sv.ip) connected=\(sv.connected) \(sv.error ?? "")") } }
+            check(hz.https.hosts.count == 2 && hz.https.verdict.status == "ok" && hz.https.hosts[0].servers.contains { $0.connected && $0.trusted && $0.revocationChecked },
+                  "https card decodes (\(hz.https.verdict.message))")
 
             // 13d. registration data: RDAP for a gTLD, WHOIS fallback for a ccTLD without RDAP.
-            let rd: RDAPResult = try await core.call("rdap", RDAPParams(domain: "n0rdy.foo", endpoint: cf, options: Options(), bootstrap: []))
+            let rd: RDAPResult = try await core.call("rdap", RDAPParams(domain: "example.com", endpoint: cf, options: Options(), bootstrap: []))
             check(rd.source == "rdap" && rd.found && rd.registrar.name != nil && rd.expires != nil && !rd.nameservers.isEmpty,
-                  "rdap n0rdy.foo: \(rd.registrar.name ?? "?") (IANA \(rd.registrar.ianaId ?? "?")), expires \(rd.expires ?? "?"), \(rd.status.count) status, ns \(rd.nameservers.count), bootstrap \(rd.bootstrapSource)")
+                  "rdap example.com: \(rd.registrar.name ?? "?") (IANA \(rd.registrar.ianaId ?? "?")), expires \(rd.expires ?? "?"), \(rd.status.count) status, ns \(rd.nameservers.count), bootstrap \(rd.bootstrapSource)")
             let wh: RDAPResult = try await core.call("rdap", RDAPParams(domain: "retrek.me", endpoint: cf, options: Options(), bootstrap: []))
             check(wh.found && !wh.nameservers.isEmpty,
                   "registry retrek.me via \(wh.source) \(wh.server): \(wh.registrar.name ?? "?"), expires \(wh.expires ?? "?"), ns \(wh.nameservers.joined(separator: " "))")
