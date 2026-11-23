@@ -12,6 +12,7 @@ import (
 	"github.com/n0rdy/nordyg/core/internal/dnssec"
 	"github.com/n0rdy/nordyg/core/internal/email"
 	"github.com/n0rdy/nordyg/core/internal/export"
+	"github.com/n0rdy/nordyg/core/internal/health"
 	"github.com/n0rdy/nordyg/core/internal/presets"
 	"github.com/n0rdy/nordyg/core/internal/query"
 	"github.com/n0rdy/nordyg/core/internal/rdap"
@@ -53,7 +54,9 @@ func NewWith(tc *transport.Client) *bridge.Dispatcher {
 	q := &query.Op{Client: tc, Decorate: txtdecode.Decorate, Validator: dnssec.QueryHook{V: v, Client: tc}}
 	q.Register(d)
 	(&compare.Op{Query: q}).Register(d)
-	(&trace.Op{Client: tc, Decorate: txtdecode.Decorate, Validator: dnssec.TraceHook{V: v, Client: tc}}).Register(d)
+	tr := &trace.Op{Client: tc, Decorate: txtdecode.Decorate, Validator: dnssec.TraceHook{V: v, Client: tc}}
+	tr.Register(d)
+	(&health.Op{Client: tc, Trace: tr}).Register(d)
 	(&email.Op{Client: tc}).Register(d)
 	rdap.New(tc).Register(d)
 	presets.Register(d)

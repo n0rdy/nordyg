@@ -17,6 +17,7 @@
 		769F5477EC6A291C9C3CC96D /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 85317044D794DF2935CD0676 /* AppIcon.icon */; };
 		820894E762F1EED80DB70068 /* RecordDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B77C6D5F2806DF13D416182 /* RecordDetail.swift */; };
 		8C69467B616CDABBE6E4D918 /* QueryResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CF6A7A69A355276A1A4D3E /* QueryResultView.swift */; };
+		8FB0F92E86AE9E6B3022AF9D /* HealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02595255FBAF8DC15A192FD4 /* HealthView.swift */; };
 		97F294C961493B18A4AF1B0E /* CoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA298458E1FC218F3D43D8F9 /* CoreBridge.swift */; };
 		A094BEA3D065337DBC388D35 /* DetailsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04E9BE2BF54273089464150C /* DetailsView.swift */; };
 		A25AC623924276512ACA2A23 /* AboutPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FCABDBC6B8CE24C9335F141 /* AboutPanel.swift */; };
@@ -39,6 +40,7 @@
 
 /* Begin PBXFileReference section */
 		00A5EB06BE3509FD063C2508 /* Nordyg.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nordyg.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		02595255FBAF8DC15A192FD4 /* HealthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthView.swift; sourceTree = "<group>"; };
 		033AFA978BEC7A1F7B4A3C24 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		0398D499E37F2DFFB5BE296A /* History.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = History.swift; sourceTree = "<group>"; };
 		04E9BE2BF54273089464150C /* DetailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailsView.swift; sourceTree = "<group>"; };
@@ -154,6 +156,7 @@
 				04E9BE2BF54273089464150C /* DetailsView.swift */,
 				CE0B9951B7ED27F5CA39F03F /* DNSSECView.swift */,
 				AC5484107ACD135B39E7E13D /* EmailView.swift */,
+				02595255FBAF8DC15A192FD4 /* HealthView.swift */,
 				6349ECABD302FD6CD13C3D1A /* HistoryView.swift */,
 				57E1032E4B1912602DA8E0F6 /* QueryBar.swift */,
 				A2CF6A7A69A355276A1A4D3E /* QueryResultView.swift */,
@@ -263,6 +266,7 @@
 				A68EBB735D368413FE4D2D32 /* DNSSECView.swift in Sources */,
 				A094BEA3D065337DBC388D35 /* DetailsView.swift in Sources */,
 				28FD7195F45FD6ED7BD75544 /* EmailView.swift in Sources */,
+				8FB0F92E86AE9E6B3022AF9D /* HealthView.swift in Sources */,
 				D5481E55DD56C6D970C05D1C /* History.swift in Sources */,
 				CB3D2C1089E90722A9FEB10B /* HistoryView.swift in Sources */,
 				F5588726D26CDAB2CDCD5B4A /* JSONValue.swift in Sources */,

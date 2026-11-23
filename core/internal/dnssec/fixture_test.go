@@ -75,15 +75,23 @@ func newZone(t *testing.T, apex string, opts ...zoneOpt) *zone {
 		if z.ksk.Algorithm == dns.RSASHA256 {
 			bits = 2048
 		}
-		kp, err := z.ksk.Generate(bits)
-		if err != nil {
-			t.Fatal(err)
+		// miekg refuses to sign with key tag 0, and equal tags would make the
+		// fixture depend on collision handling; both happen at random, so
+		// regenerate until the keys are distinct and usable.
+		for {
+			kp, err := z.ksk.Generate(bits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			zp, err := z.zsk.Generate(bits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			z.kpriv, z.zpriv = kp.(crypto.Signer), zp.(crypto.Signer)
+			if kt, zt := z.ksk.KeyTag(), z.zsk.KeyTag(); kt != 0 && zt != 0 && kt != zt {
+				break
+			}
 		}
-		zp, err := z.zsk.Generate(bits)
-		if err != nil {
-			t.Fatal(err)
-		}
-		z.kpriv, z.zpriv = kp.(crypto.Signer), zp.(crypto.Signer)
 		z.addRR(z.ksk)
 		z.addRR(z.zsk)
 	}
@@ -357,6 +365,7 @@ func (z *zone) answer(q *dns.Msg) *dns.Msg {
 				c.Header().Name = qq.Name
 				m.Answer = append(m.Answer, c)
 			}
+			m.Ns = append(m.Ns, z.wildcardProof(name, wild)...)
 			return m
 		}
 	}
@@ -425,6 +434,28 @@ func (z *zone) denial(name string, qtype uint16) []dns.RR {
 		return out
 	}
 	return out
+}
+
+// wildcardProof returns the record (with RRSIG) that proves name itself does
+// not exist, which a signed wildcard answer must carry: the NSEC covering
+// name, or the NSEC3 covering the next closer name below the wildcard's parent.
+func (z *zone) wildcardProof(name, wild string) []dns.RR {
+	if !z.signed {
+		return nil
+	}
+	var rr dns.RR
+	if z.nsec3 {
+		ce := strings.TrimPrefix(wild, "*.")
+		labels := dns.SplitDomainName(name)
+		nc := strings.Join(labels[len(labels)-dns.CountLabel(ce)-1:], ".") + "."
+		rr = z.nsec3Covering(nc)
+	} else {
+		rr = z.nsecCovering(name)
+	}
+	if rr == nil {
+		return nil
+	}
+	return append([]dns.RR{rr}, z.sigs[strings.ToLower(rr.Header().Name)][rr.Header().Rrtype]...)
 }
 
 func (z *zone) nsecCovering(name string) dns.RR {

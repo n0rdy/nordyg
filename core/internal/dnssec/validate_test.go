@@ -2,9 +2,11 @@ package dnssec
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/miekg/dns"
 )
@@ -28,6 +30,8 @@ func newWorld(t *testing.T) *world {
 	w.example.add("example.test. 300 IN TXT \"v=spf1 -all\"")
 	w.example.add("www.example.test. 300 IN CNAME example.test.")
 	w.example.add("*.wild.example.test. 300 IN A 192.0.2.99")
+	w.example.add("real.wild.example.test. 300 IN A 192.0.2.98")
+	w.example.add("old.example.test. 300 IN DNAME example.test.")
 	w.example.add("alias.example.test. 300 IN CNAME target.other.test.")
 	other := newZone(t, "other.test.")
 	other.add("target.other.test. 300 IN A 192.0.2.77")
@@ -46,6 +50,7 @@ func newWorld(t *testing.T) *world {
 	w.n3 = newZone(t, "nsec3.test.", withNSEC3(true))
 	w.n3.add("nsec3.test. 300 IN A 192.0.2.80")
 	w.n3.add("a.nsec3.test. 300 IN A 192.0.2.81")
+	w.n3.add("*.w.nsec3.test. 300 IN A 192.0.2.84")
 	w.n3optoutChild = newZone(t, "optout.nsec3.test.", unsigned())
 	w.n3optoutChild.add("optout.nsec3.test. 300 IN A 192.0.2.82")
 	w.n3signedChild = newZone(t, "signed.nsec3.test.")
@@ -152,6 +157,139 @@ func TestSecureWildcardAndCNAME(t *testing.T) {
 	if err != nil || res.Status != Secure || len(res.AnswerSignatures) != 2 {
 		t.Fatalf("cross-zone cname: %+v %v", res, err)
 	}
+	// The primary chain ends at the queried name's zone; the target's zone
+	// is reported as a related chain of its own.
+	if got := strings.Join(zones(res), " "); got != ".:secure test.:secure example.test.:secure" {
+		t.Fatalf("primary chain: %s", got)
+	}
+	if len(res.Related) != 1 {
+		t.Fatalf("related: %+v", res.Related)
+	}
+	rel := res.Related[0]
+	if rel.Name != "target.other.test." || rel.Type != "A" || rel.Signer != "other.test." || rel.Status != Secure {
+		t.Fatalf("related: %+v", rel)
+	}
+	if got := strings.Join(zones(&Result{Chain: rel.Chain}), " "); got != ".:secure test.:secure other.test.:secure" {
+		t.Fatalf("related chain: %s", got)
+	}
+	// Same-zone answers have no related chains.
+	if res := w.query(t, "www.example.test.", dns.TypeA); len(res.Related) != 0 {
+		t.Fatalf("same-zone related: %+v", res.Related)
+	}
+}
+
+func TestRelatedChainCarriesVerdict(t *testing.T) {
+	w := newWorld(t)
+	// CNAME from a secure zone into one with a DS that matches no key.
+	m, _ := w.fetch.Fetch(context.Background(), "alias.example.test.", dns.TypeA)
+	tgt, _ := w.fetch.Fetch(context.Background(), "bogus.test.", dns.TypeA)
+	m.Answer = append(m.Answer, tgt.Answer...)
+	res, err := w.v.Validate(context.Background(), w.fetch, "alias.example.test.", dns.TypeA, m)
+	if err != nil || res.Status != Bogus || len(res.Related) != 1 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	rel := res.Related[0]
+	if rel.Status != Bogus || rel.Reason == "" || rel.Chain[len(rel.Chain)-1].Zone != "bogus.test." {
+		t.Fatalf("related: %+v", rel)
+	}
+	if !strings.HasPrefix(res.Reason, "bogus.test.: ") {
+		t.Fatalf("reason: %s", res.Reason)
+	}
+}
+
+func TestWildcardProof(t *testing.T) {
+	w := newWorld(t)
+	validate := func(name string, m *dns.Msg) *Result {
+		t.Helper()
+		res, err := w.v.Validate(context.Background(), w.fetch, name, dns.TypeA, m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	fetch := func(name string) *dns.Msg {
+		t.Helper()
+		m, err := w.fetch.Fetch(context.Background(), name, dns.TypeA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+
+	t.Run("nsec3 wildcard is secure", func(t *testing.T) {
+		if res := w.query(t, "x.w.nsec3.test.", dns.TypeA); res.Status != Secure {
+			t.Fatalf("%s: %s", res.Status, res.Reason)
+		}
+	})
+	t.Run("proof includes its signatures", func(t *testing.T) {
+		res := w.query(t, "anything.wild.example.test.", dns.TypeA)
+		nsec := false
+		for _, s := range res.AnswerSignatures {
+			nsec = nsec || (s.TypeCovered == "NSEC" && s.Valid)
+		}
+		if !nsec {
+			t.Fatalf("no NSEC signature reported: %+v", res.AnswerSignatures)
+		}
+	})
+	for _, name := range []string{"anything.wild.example.test.", "x.w.nsec3.test."} {
+		t.Run("missing proof is bogus "+name, func(t *testing.T) {
+			m := fetch(name)
+			m.Ns = nil
+			if res := validate(name, m); res.Status != Bogus || !strings.Contains(res.Reason, "does not prove") {
+				t.Fatalf("%s: %s", res.Status, res.Reason)
+			}
+		})
+	}
+	t.Run("wildcard replayed onto an existing name is bogus", func(t *testing.T) {
+		// Take the signed wildcard expansion and its proof for one name and
+		// present them as the answer for a name that has its own records.
+		m := fetch("anything.wild.example.test.")
+		for _, rr := range m.Answer {
+			rr.Header().Name = "real.wild.example.test."
+		}
+		if res := validate("real.wild.example.test.", m); res.Status != Bogus || !strings.Contains(res.Reason, "does not prove") {
+			t.Fatalf("%s: %s", res.Status, res.Reason)
+		}
+	})
+	t.Run("labels above owner count is bogus", func(t *testing.T) {
+		m := fetch("example.test.")
+		for _, rr := range m.Answer {
+			if sig, ok := rr.(*dns.RRSIG); ok {
+				sig.Labels = 5
+			}
+		}
+		if res := validate("example.test.", m); res.Status != Bogus || !strings.Contains(res.Reason, "labels field") {
+			t.Fatalf("%s: %s", res.Status, res.Reason)
+		}
+	})
+}
+
+func TestDNAME(t *testing.T) {
+	w := newWorld(t)
+	dname, err := w.fetch.Fetch(context.Background(), "old.example.test.", dns.TypeDNAME)
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := func(target string) *dns.Msg {
+		m := dname.Copy()
+		cn, _ := dns.NewRR("www.old.example.test. 300 IN CNAME " + target)
+		m.Answer = append(m.Answer, cn)
+		tgt, _ := w.fetch.Fetch(context.Background(), "www.example.test.", dns.TypeA)
+		m.Answer = append(m.Answer, tgt.Answer...)
+		return m
+	}
+	t.Run("synthesised CNAME is accepted", func(t *testing.T) {
+		res, err := w.v.Validate(context.Background(), w.fetch, "www.old.example.test.", dns.TypeA, build("www.example.test."))
+		if err != nil || res.Status != Secure {
+			t.Fatalf("%+v %v", res, err)
+		}
+	})
+	t.Run("CNAME that does not follow from the DNAME is bogus", func(t *testing.T) {
+		res, err := w.v.Validate(context.Background(), w.fetch, "www.old.example.test.", dns.TypeA, build("evil.example.test."))
+		if err != nil || res.Status != Bogus || !strings.Contains(res.Reason, "has no RRSIG") {
+			t.Fatalf("%+v %v", res, err)
+		}
+	})
 }
 
 func TestSecureNegativeNSEC(t *testing.T) {
@@ -198,7 +336,7 @@ func TestInsecureDelegation(t *testing.T) {
 func TestBogusCases(t *testing.T) {
 	w := newWorld(t)
 	cases := []struct{ name, want string }{
-		{"bogus.test.", "no DNSKEY of bogus.test. matches its DS"},
+		{"bogus.test.", "no DNSKEY of bogus.test matches its DS"},
 		{"expired.test.", "expired"},
 		{"badsig.test.", "does not verify"},
 		{"stripped.test.", "has no RRSIG"},
@@ -272,5 +410,36 @@ func TestCanonicalOrder(t *testing.T) {
 	n := &dns.NSEC{Hdr: dns.RR_Header{Name: "z.example."}, NextDomain: "example."}
 	if !nsecCovers(n, "zz.example.") || nsecCovers(n, "a.example.") || nsecCovers(n, "z.example.") {
 		t.Fatal("wrap-around cover")
+	}
+}
+
+func TestKeyTagCollision(t *testing.T) {
+	// Two zone keys with the same tag: the signature verifies with the
+	// second one, which a first-match lookup would never try.
+	z := newZone(t, "collide.test.")
+	z.add("collide.test. 300 IN A 192.0.2.90")
+	z.sign()
+	s := findSet(rrsets(append(append([]dns.RR{}, z.rrsets["collide.test."][dns.TypeA]...), z.sigs["collide.test."][dns.TypeA]...)), "collide.test.", dns.TypeA)
+	// The key tag is a 16-bit sum over the key's wire form (RFC 4034
+	// appendix B). Raising one high byte and lowering the next high byte
+	// keeps the sum, so the decoy is a different key with the same tag.
+	raw, err := base64.StdEncoding.DecodeString(z.zsk.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := 0
+	for raw[i] == 255 || raw[i+2] == 0 {
+		i += 2
+	}
+	raw[i]++
+	raw[i+2]--
+	decoy := *z.zsk
+	decoy.PublicKey = base64.StdEncoding.EncodeToString(raw)
+	if decoy.KeyTag() != z.zsk.KeyTag() || decoy.PublicKey == z.zsk.PublicKey {
+		t.Fatalf("decoy tag %d, want %d", decoy.KeyTag(), z.zsk.KeyTag())
+	}
+	sigs, ok := verifySet(s, []*dns.DNSKEY{&decoy, z.zsk}, "collide.test.", time.Now())
+	if !ok {
+		t.Fatalf("collision not handled: %+v", sigs)
 	}
 }

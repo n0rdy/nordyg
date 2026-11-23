@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 enum Mode: String, CaseIterable, Identifiable {
-    case query, compare, trace, email, registry
+    case query, compare, trace, email, registry, health
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -11,6 +11,74 @@ enum Mode: String, CaseIterable, Identifiable {
         case .trace: return "Trace"
         case .email: return "Email"
         case .registry: return "Registry"
+        case .health: return "Zone check"
+        }
+    }
+}
+
+extension Mode {
+    /// One line for the mode picker's tooltip.
+    var summary: String {
+        switch self {
+        case .query: return "Ask one resolver and see everything it returned."
+        case .compare: return "Ask several resolvers at once and see where they differ."
+        case .trace: return "Follow the delegation from the root servers to the answer."
+        case .email: return "Check a mail domain's MX, SPF, DKIM, DMARC, MTA-STS, BIMI and blocklists."
+        case .registry: return "See who registered a domain, when it expires and its status, via RDAP or WHOIS."
+        case .health: return "Check that a domain's DNS is delegated and served correctly."
+        }
+    }
+
+    /// The fuller explanation shown before the mode has been run.
+    var explanation: String {
+        switch self {
+        case .query:
+            return "Ask one resolver and see everything it returned: flags, every section, EDNS options, timing, the raw message, and a DNSSEC chain that Nordyg checks itself. An IP address runs a reverse lookup. ALL asks for the common types at once."
+        case .compare:
+            return "Ask several resolvers the same question at once and see where their answers differ. Pick the resolvers from the token in the bar."
+        case .trace:
+            return "Follow the delegation from the root servers down to the server that holds the answer, one hop at a time, without any cache in the way."
+        case .email:
+            return "Check a mail domain: MX hosts and their reverse records, SPF and its lookup count, DKIM keys, the DMARC policy, MTA-STS, BIMI and blocklists, each with a verdict."
+        case .registry:
+            return "Look up who registered a domain, when it expires, its status codes, and the nameservers the registry has on file. Uses RDAP, and WHOIS for the TLDs that have no RDAP."
+        case .health:
+            return "Is this domain's DNS set up correctly? Nordyg finds what the parent zone delegates to, asks every nameserver directly, and compares their answers: serials, NS sets, glue, TCP, zone transfers, open recursion, DNSSEC and CAA."
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .query: return "magnifyingglass"
+        case .compare: return "square.split.2x1"
+        case .trace: return "point.topleft.down.to.point.bottomright.curvepath"
+        case .email: return "envelope"
+        case .registry: return "building.columns"
+        case .health: return "stethoscope"
+        }
+    }
+
+    /// What to type, for the empty state's last line.
+    var prompt: String {
+        switch self {
+        case .query, .compare, .trace: return "Type a name or an IP address and press ⌘↩."
+        case .email: return "Type a mail domain and press ⌘↩."
+        case .registry: return "Type a registered domain and press ⌘↩."
+        case .health: return "Type a domain and press ⌘↩."
+        }
+    }
+
+    /// Modes that take a domain rather than a name and record type.
+    var takesDomain: Bool { self == .email || self == .registry || self == .health }
+    /// Modes that ask through the selected resolver.
+    var usesResolver: Bool { self == .query || takesDomain }
+    /// The label history shows in place of a record type.
+    var historyType: String? {
+        switch self {
+        case .email: return "MAIL"
+        case .registry: return "RDAP"
+        case .health: return "ZONE"
+        default: return nil
         }
     }
 }
@@ -21,6 +89,19 @@ enum Outcome {
     case trace(TraceResult)
     case email(EmailResult)
     case registry(RDAPResult)
+    case health(HealthResult)
+
+    /// The mode that produced this outcome.
+    var mode: Mode {
+        switch self {
+        case .query: return .query
+        case .compare: return .compare
+        case .trace: return .trace
+        case .email: return .email
+        case .registry: return .registry
+        case .health: return .health
+        }
+    }
 }
 
 @MainActor
@@ -43,7 +124,12 @@ final class AppModel: ObservableObject {
 
     // Outcome
     @Published var isRunning = false
-    @Published var outcome: Outcome?
+    /// The last result of each mode, so tabs keep their own result.
+    @Published var outcomes: [Mode: Outcome] = [:]
+    /// The mode whose run is in flight, so only that tab shows progress.
+    @Published var runningMode: Mode?
+    /// The visible tab's result.
+    var outcome: Outcome? { outcomes[mode] }
     @Published var resultVersion = 0
 
     // Watches
@@ -101,7 +187,7 @@ final class AppModel: ObservableObject {
         let n = name.trimmingCharacters(in: .whitespaces)
         if n.isEmpty || isRunning { return false }
         switch mode {
-        case .query, .email, .registry: return selected != nil
+        case .query, .email, .registry, .health: return selected != nil
         case .compare: return !compareSelection.isEmpty
         case .trace: return true
         }
@@ -112,7 +198,7 @@ final class AppModel: ObservableObject {
         let n = name.trimmingCharacters(in: .whitespaces)
         var t = type
         // Typing an IP address means a reverse lookup unless a type was chosen deliberately.
-        if mode != .email, mode != .registry, t == "A" || t == "ALL", isIPAddress(n) { t = "PTR"; type = "PTR" }
+        if !mode.takesDomain, t == "A" || t == "ALL", isIPAddress(n) { t = "PTR"; type = "PTR" }
         let selector = dkimSelector.trimmingCharacters(in: .whitespaces)
         let question = Question(name: n, type: t, qclass: nil)
         let mode = self.mode
@@ -124,6 +210,7 @@ final class AppModel: ObservableObject {
 
         errorMessage = nil
         isRunning = true
+        runningMode = mode
         selectedWatch = nil
         systemView = nil
         if mode == .query, ["A", "AAAA", "ALL"].contains(t) {
@@ -159,10 +246,14 @@ final class AppModel: ObservableObject {
                     guard let endpoint else { return }
                     let r: RDAPResult = try await self.core.call("rdap", RDAPParams(domain: n, endpoint: endpoint, options: opts, bootstrap: boot))
                     out = .registry(r)
+                case .health:
+                    guard let endpoint else { return }
+                    let r: HealthResult = try await self.core.call("health", HealthParams(domain: n, endpoint: endpoint, options: opts, bootstrap: boot))
+                    out = .health(r)
                 }
-                self.outcome = out
+                self.outcomes[mode] = out
                 self.resultVersion += 1
-                self.remember(HistoryItem(name: n, type: mode == .email ? "MAIL" : (mode == .registry ? "RDAP" : t), mode: mode.rawValue, endpoint: (mode == .query || mode == .email || mode == .registry) ? endpoint : nil))
+                self.remember(HistoryItem(name: n, type: mode.historyType ?? t, mode: mode.rawValue, endpoint: mode.usesResolver ? endpoint : nil))
             } catch is CancellationError {
                 // user cancelled
             } catch let e as CoreError {
@@ -171,6 +262,7 @@ final class AppModel: ObservableObject {
                 self.errorMessage = error.localizedDescription
             }
             self.isRunning = false
+            self.runningMode = nil
         }
     }
 
@@ -191,6 +283,15 @@ final class AppModel: ObservableObject {
     func cancel() {
         task?.cancel()
     }
+
+    /// Empties the visible tab, which shows its explanation again.
+    func clearResult() {
+        outcomes[mode] = nil
+        errorMessage = nil
+        resultVersion += 1
+    }
+
+    var canClear: Bool { outcome != nil && runningMode != mode }
 
     /// Start watching the current question at the selected resolver.
     func watchCurrent(interval: Int) {
@@ -258,7 +359,7 @@ final class AppModel: ObservableObject {
 
     func rerun(_ item: HistoryItem) {
         name = item.name
-        if item.type != "MAIL" && item.type != "RDAP" { type = item.type }
+        if !Mode.allCases.contains(where: { $0.historyType == item.type }) { type = item.type }
         mode = Mode(rawValue: item.mode) ?? .query
         if let ep = item.endpoint { selected = ep }
         run()
@@ -292,6 +393,7 @@ final class AppModel: ObservableObject {
         case .trace(let r): data = try? enc.encode(r)
         case .email(let r): data = try? enc.encode(r)
         case .registry(let r): data = try? enc.encode(r)
+        case .health(let r): data = try? enc.encode(r)
         case nil: data = nil
         }
         return data.flatMap { String(data: $0, encoding: .utf8) }

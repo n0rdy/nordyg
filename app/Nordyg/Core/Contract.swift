@@ -166,6 +166,16 @@ struct DNSSECResult: Codable, Hashable {
     var trustAnchor: DNSSECKey?
     var chain: [DNSSECLink]
     var answerSignatures: [DNSSECSignature]
+    /// Chains for answer RRsets signed by another zone (CNAME into another zone).
+    var related: [DNSSECRelated]?
+}
+struct DNSSECRelated: Codable, Hashable {
+    var name: String
+    var type: String
+    var signer: String
+    var status: String
+    var reason: String
+    var chain: [DNSSECLink]
 }
 
 // MARK: ops
@@ -304,6 +314,62 @@ struct RDAPResult: Codable, Hashable {
 }
 
 // MARK: email
+
+// MARK: health (contract §8d)
+
+struct HealthParams: Codable {
+    var domain: String
+    var endpoint: Endpoint
+    var options: Options
+    var bootstrap: [Endpoint]
+}
+struct HealthDelegation: Codable, Hashable {
+    var parent: String
+    var parentNs: [String]
+    var childNs: [String]
+    var verdict: Verdict
+    var findings: [Verdict]
+}
+struct HealthServer: Codable, Hashable {
+    var name: String
+    var ip: String
+    var atParent: Bool
+    var atChild: Bool
+    var answered: Bool
+    var skipped: Bool
+    var authoritative: Bool
+    var rcode: String?
+    var serial: UInt32?
+    var ns: [String]
+    var tcp: Bool
+    var edns: Bool
+    var signed: Bool
+    var axfr: String
+    var recursion: Bool
+    var rttMs: Double
+    var error: String?
+    var status: String
+    var problems: [Verdict]
+}
+struct HealthNameservers: Codable, Hashable { var servers: [HealthServer]; var verdict: Verdict; var findings: [Verdict] }
+struct HealthSerialGroup: Codable, Hashable { var serial: UInt32; var servers: [String] }
+struct HealthSOA: Codable, Hashable { var record: Record?; var serials: [HealthSerialGroup]; var verdict: Verdict; var findings: [Verdict] }
+struct HealthGlueEntry: Codable, Hashable { var name: String; var inBailiwick: Bool; var parent: [String]; var child: [String]; var match: Bool }
+struct HealthGlue: Codable, Hashable { var entries: [HealthGlueEntry]; var verdict: Verdict; var findings: [Verdict] }
+struct HealthDNSSEC: Codable, Hashable { var status: String; var ds: [Record]; var result: DNSSECResult?; var verdict: Verdict; var findings: [Verdict] }
+struct HealthCAARecord: Codable, Hashable { var flags: Int; var tag: String; var value: String }
+struct HealthCAA: Codable, Hashable { var foundAt: String?; var records: [HealthCAARecord]; var verdict: Verdict; var findings: [Verdict] }
+struct HealthResult: Codable, Hashable {
+    var domain: String
+    var zone: String
+    var delegation: HealthDelegation
+    var nameservers: HealthNameservers
+    var soa: HealthSOA
+    var glue: HealthGlue
+    var dnssec: HealthDNSSEC
+    var caa: HealthCAA
+    var overall: Verdict
+}
 
 struct EmailParams: Codable {
     var domain: String

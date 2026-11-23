@@ -13,12 +13,12 @@ struct QueryBar: View {
             HStack(spacing: 10) {
                 HStack(spacing: 0) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary).padding(.leading, 10).padding(.trailing, 6)
-                    TextField(model.mode == .email ? "mail domain" : (model.mode == .registry ? "registered domain" : "name or IP address"), text: $model.name)
+                    TextField(placeholder, text: $model.name)
                         .textFieldStyle(.plain)
                         .font(.system(.title3, design: .monospaced))
                         .focused($nameFocused)
                         .onSubmit { model.run() }
-                    if model.mode != .email && model.mode != .registry {
+                    if !model.mode.takesDomain {
                         Token {
                             Picker("Type", selection: $model.type) {
                                 ForEach(RecordTypes.all, id: \.self) { Text($0).tag($0) }
@@ -28,7 +28,7 @@ struct QueryBar: View {
                             Text(model.type).font(.system(.callout, design: .monospaced).weight(.bold)).foregroundStyle(TypeStyle.color(model.type))
                         }
                     }
-                    if model.mode == .query || model.mode == .email || model.mode == .registry {
+                    if model.mode.usesResolver {
                         Token {
                             EndpointPickerItems(selection: $model.selected)
                         } label: {
@@ -63,8 +63,8 @@ struct QueryBar: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 400)
-                Text(modeHint).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                .fixedSize()
+                .help(model.mode.summary)
                 Spacer()
                 if model.isRunning { ProgressView().controlSize(.small) }
                 if model.mode == .email {
@@ -90,13 +90,12 @@ struct QueryBar: View {
         .onAppear { nameFocused = true }
     }
 
-    var modeHint: String {
+    var placeholder: String {
         switch model.mode {
-        case .query: return "one resolver, full detail"
-        case .compare: return "several resolvers at once, differences highlighted"
-        case .trace: return "follow delegations from the root servers"
-        case .email: return "MX, SPF, DKIM, DMARC, MTA-STS, BIMI and blocklists, with verdicts"
-        case .registry: return "registrar, dates, status and nameservers via RDAP (WHOIS for ccTLDs)"
+        case .email: return "mail domain"
+        case .registry: return "registered domain"
+        case .health: return "zone"
+        default: return "name or IP address"
         }
     }
 }

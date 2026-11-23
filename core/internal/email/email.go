@@ -408,10 +408,15 @@ func checkMX(ctx context.Context, r *resolver, domain string) MXSection {
 	wg.Wait()
 	sec.Hosts = hosts
 
-	broken, ptrMiss := 0, 0
+	broken, unchecked, ptrMiss := 0, 0, 0
 	for _, h := range hosts {
-		if h.Error != "" {
+		switch {
+		case h.Error == "host has no address records":
 			broken++
+		case h.Error != "":
+			// The lookup itself failed (a timeout, a SERVFAIL): that says
+			// nothing about the host, so it is not counted as broken.
+			unchecked++
 		}
 		for _, p := range h.PTR {
 			if !p.Matches {
@@ -424,6 +429,10 @@ func checkMX(ctx context.Context, r *resolver, domain string) MXSection {
 		sec.Verdict = Verdict{Fail, "none of the MX hosts resolve to an address"}
 	case broken > 0:
 		sec.Verdict = Verdict{Warn, fmt.Sprintf("%d of %d MX hosts do not resolve", broken, len(hosts))}
+	case unchecked == len(hosts):
+		sec.Verdict = Verdict{Warn, "the MX hosts could not be looked up through this resolver; run the check again"}
+	case unchecked > 0:
+		sec.Verdict = Verdict{Warn, fmt.Sprintf("%d of %d MX hosts could not be looked up through this resolver; run the check again", unchecked, len(hosts))}
 	case ptrMiss > 0:
 		sec.Verdict = Verdict{Warn, fmt.Sprintf("%d MX address%s without a matching reverse (PTR) record; some receivers score this against the sender", ptrMiss, pluralEs(ptrMiss))}
 	default:

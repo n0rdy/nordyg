@@ -2,7 +2,6 @@ import SwiftUI
 
 struct DNSSECView: View {
     var result: DNSSECResult?
-    @State private var selected: Int?
 
     var body: some View {
         if let r = result {
@@ -30,10 +29,10 @@ struct DNSSECView: View {
                     }
 
                     Text("Chain of trust").font(.headline)
-                    ChainStrip(chain: r.chain, selected: $selected)
+                    ChainSection(chain: r.chain)
 
-                    if let i = selected ?? r.chain.indices.last, r.chain.indices.contains(i) {
-                        LinkCard(link: r.chain[i])
+                    ForEach(Array((r.related ?? []).enumerated()), id: \.offset) { _, rel in
+                        RelatedChain(related: rel)
                     }
 
                     if !r.answerSignatures.isEmpty {
@@ -49,6 +48,49 @@ struct DNSSECView: View {
         } else {
             ContentUnavailableView("Validation was off", systemImage: "lock.slash", description: Text("Turn on “Validate DNSSEC” and run again to see the chain of trust."))
         }
+    }
+}
+
+/// A chain strip with the selected link's card under it. Each section keeps
+/// its own selection, so the related chains can be inspected independently.
+struct ChainSection: View {
+    var chain: [DNSSECLink]
+    @State private var selected: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ChainStrip(chain: chain, selected: $selected)
+            if let i = selected ?? chain.indices.last, chain.indices.contains(i) {
+                LinkCard(link: chain[i])
+            }
+        }
+        .onChange(of: chain) { selected = nil }
+    }
+}
+
+/// The chain for an answer RRset signed by another zone, under a heading that
+/// says how the answer got there.
+struct RelatedChain: View {
+    var related: DNSSECRelated
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Then").font(.headline)
+                TypeBadge(type: related.type)
+                Text(prose(related.name)).font(.system(.headline, design: .monospaced))
+                Text("in \(proseZone(related.signer))").font(.headline).foregroundStyle(.secondary)
+                StatusBadge(status: related.status)
+            }
+            .textSelection(.enabled)
+            if !related.reason.isEmpty {
+                Text(related.reason).font(.callout)
+                    .foregroundStyle(related.status == "bogus" ? Color.red : Color.secondary)
+                    .textSelection(.enabled)
+            }
+            ChainSection(chain: related.chain)
+        }
+        .padding(.top, 6)
     }
 }
 

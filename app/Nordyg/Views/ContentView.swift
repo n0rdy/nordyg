@@ -30,6 +30,13 @@ struct ContentView: View {
                 .disabled(!model.canWatch)
             }
             ToolbarItem(placement: .primaryAction) {
+                Button { model.clearResult() } label: {
+                    Label("Clear", systemImage: "xmark.circle")
+                }
+                .help("Clear this tab's result (⌘K)")
+                .disabled(!model.canClear)
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Menu {
                     ExportMenu()
                 } label: {
@@ -62,9 +69,10 @@ struct ResultArea: View {
             if let id = model.selectedWatch {
                 WatchView(id: id)
             } else {
+            // Each tab shows its own last result, or its explanation.
             switch model.outcome {
             case .none:
-                Placeholder(running: model.isRunning)
+                Placeholder(running: model.runningMode == model.mode, mode: model.mode)
             case .query(let results):
                 QueryResultView(results: results)
             case .compare(let r):
@@ -75,6 +83,8 @@ struct ResultArea: View {
                 EmailView(result: r)
             case .registry(let r):
                 RegistryView(result: r)
+            case .health(let r):
+                HealthView(result: r)
             }
             }
         }
@@ -85,8 +95,11 @@ struct ResultArea: View {
     }
 }
 
+/// The empty state explains the selected mode, so each mode introduces
+/// itself the first time it is picked.
 struct Placeholder: View {
     var running: Bool
+    var mode: Mode
     var body: some View {
         if running {
             VStack(spacing: 10) {
@@ -95,9 +108,13 @@ struct Placeholder: View {
             }
         } else {
             ContentUnavailableView {
-                Label("Ask the DNS something", systemImage: "network")
+                Label(mode.title, systemImage: mode.icon)
             } description: {
-                Text("Type a name, pick a type and a resolver, press ⌘↩.\nAn IP address runs a reverse lookup. ALL fans out over the common types.")
+                VStack(spacing: 10) {
+                    Text(mode.explanation)
+                    Text(mode.prompt).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: 520)
             }
         }
     }
@@ -117,7 +134,10 @@ struct ExportMenu: View {
         Button("Copy result as JSON") { if let s = model.exportJSON() { Pasteboard.copy(s) } }
             .disabled(model.outcome == nil)
         Button("Copy answers as Markdown table") { if let s = MarkdownExport.table(model.outcome) { Pasteboard.copy(s) } }
-            .disabled(model.outcome == nil)
+            .disabled(MarkdownExport.table(model.outcome) == nil)
+        if case .health(let r) = model.outcome {
+            Button("Copy health report as Markdown") { Pasteboard.copy(HealthReport.markdown(r)) }
+        }
     }
 }
 
@@ -128,7 +148,7 @@ enum MarkdownExport {
         case .query(let rs): rows = rs.flatMap(\.message.answer)
         case .trace(let t): rows = t.final.answer
         case .compare(let c): rows = c.results.compactMap(\.message).flatMap(\.answer)
-        case .email, .registry: return nil
+        case .email, .registry, .health: return nil
         case nil: return nil
         }
         var s = "| Name | TTL | Type | Data |\n|---|---:|---|---|\n"

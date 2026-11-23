@@ -78,13 +78,22 @@ func supportedDigest(d uint8) bool {
 // signature's outcome and whether at least one verified with a key from keys
 // whose signer name is zone.
 func verifySet(s *rrset, keys []*dns.DNSKEY, zone string, now time.Time) ([]Signature, bool) {
+	out, sig := verifySetSig(s, keys, zone, now)
+	return out, sig != nil
+}
+
+// verifySetSig is verifySet that also returns the first RRSIG that verified,
+// so the caller can read its Labels field for wildcard detection.
+func verifySetSig(s *rrset, keys []*dns.DNSKEY, zone string, now time.Time) ([]Signature, *dns.RRSIG) {
 	var out []Signature
-	valid := false
+	var valid *dns.RRSIG
 	for _, sig := range s.sigs {
 		entry := signatureEntry(sig, now)
 		switch {
 		case !strings.EqualFold(sig.SignerName, zone):
 			entry.Error = "signer " + sig.SignerName + " is not the zone " + zone
+		case int(sig.Labels) > ownerLabels(s.name):
+			entry.Error = "RRSIG labels field " + itoa(int(sig.Labels)) + " exceeds the " + itoa(ownerLabels(s.name)) + " labels of " + s.name + " (RFC 4035 §5.3.1)"
 		case !sig.ValidityPeriod(now):
 			if now.After(msg.SerialTime(sig.Expiration)) {
 				entry.Error = "signature expired " + msg.SerialTime(sig.Expiration).Format(time.RFC3339)
@@ -92,16 +101,28 @@ func verifySet(s *rrset, keys []*dns.DNSKEY, zone string, now time.Time) ([]Sign
 				entry.Error = "signature not yet valid until " + msg.SerialTime(sig.Inception).Format(time.RFC3339)
 			}
 		default:
-			key := keyFor(keys, sig)
-			if key == nil {
+			cands := keysFor(keys, sig)
+			if len(cands) == 0 {
 				entry.Error = "no DNSKEY with tag " + itoa(int(sig.KeyTag)) + " and algorithm " + itoa(int(sig.Algorithm))
 			} else if !supportedAlgorithm(sig.Algorithm) {
 				entry.Error = "unsupported algorithm " + itoa(int(sig.Algorithm))
-			} else if err := sig.Verify(key, s.rrs); err != nil {
-				entry.Error = "signature does not verify: " + err.Error()
 			} else {
-				entry.Valid = true
-				valid = true
+				// Key tags collide, so every key with the tag is a candidate
+				// (RFC 4035 §5.3.1).
+				var err error
+				for _, key := range cands {
+					if err = sig.Verify(key, s.rrs); err == nil {
+						break
+					}
+				}
+				if err != nil {
+					entry.Error = "signature does not verify: " + err.Error()
+				} else {
+					entry.Valid = true
+					if valid == nil {
+						valid = sig
+					}
+				}
 			}
 		}
 		out = append(out, entry)
@@ -109,13 +130,39 @@ func verifySet(s *rrset, keys []*dns.DNSKEY, zone string, now time.Time) ([]Sign
 	return out, valid
 }
 
-func keyFor(keys []*dns.DNSKEY, sig *dns.RRSIG) *dns.DNSKEY {
+// ownerLabels counts the labels of an owner name the way the RRSIG Labels
+// field does: a leading "*" label is not counted (RFC 4034 §3.1.3).
+func ownerLabels(name string) int {
+	n := dns.CountLabel(name)
+	if strings.HasPrefix(name, "*.") {
+		n--
+	}
+	return n
+}
+
+// wildcardOwner returns the wildcard an RRset was expanded from when its
+// RRSIG covers fewer labels than the owner name (RFC 4035 §5.3.2), else "".
+func wildcardOwner(name string, sig *dns.RRSIG) string {
+	if int(sig.Labels) >= ownerLabels(name) {
+		return ""
+	}
+	if sig.Labels == 0 {
+		return "*."
+	}
+	labels := dns.SplitDomainName(name)
+	return "*." + strings.Join(labels[len(labels)-int(sig.Labels):], ".") + "."
+}
+
+// keysFor returns every usable zone key matching the signature's tag and
+// algorithm.
+func keysFor(keys []*dns.DNSKEY, sig *dns.RRSIG) []*dns.DNSKEY {
+	var out []*dns.DNSKEY
 	for _, k := range keys {
 		if k.KeyTag() == sig.KeyTag && k.Algorithm == sig.Algorithm && k.Flags&dns.ZONE != 0 && k.Flags&dns.REVOKE == 0 {
-			return k
+			out = append(out, k)
 		}
 	}
-	return nil
+	return out
 }
 
 func signatureEntry(sig *dns.RRSIG, now time.Time) Signature {

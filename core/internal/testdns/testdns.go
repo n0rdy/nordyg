@@ -85,6 +85,31 @@ func UDP(t testing.TB, a Answer) string {
 	return pc.LocalAddr().String()
 }
 
+// UDPTCP serves the same handler over UDP and TCP on one port, like a real
+// nameserver, and returns its ip:port.
+func UDPTCP(t testing.TB, a Answer) string {
+	t.Helper()
+	for attempt := 0; attempt < 20; attempt++ {
+		pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		l, err := net.Listen("tcp", pc.LocalAddr().String())
+		if err != nil {
+			_ = pc.Close() // port taken for TCP; try another
+			continue
+		}
+		u := &dns.Server{PacketConn: pc, Handler: handler(a)}
+		s := &dns.Server{Listener: l, Handler: handler(a)}
+		go func() { _ = u.ActivateAndServe() }()
+		go func() { _ = s.ActivateAndServe() }()
+		t.Cleanup(func() { _ = u.Shutdown(); _ = s.Shutdown() })
+		return pc.LocalAddr().String()
+	}
+	t.Fatal("no port free for both UDP and TCP")
+	return ""
+}
+
 // TCP starts a TCP server and returns its ip:port.
 func TCP(t testing.TB, a Answer) string {
 	t.Helper()

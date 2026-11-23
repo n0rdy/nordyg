@@ -33,6 +33,7 @@ struct NordygApp: App {
             CommandMenu("Query") {
                 Button("Run") { model.run() }.keyboardShortcut(.return, modifiers: .command).disabled(!model.canRun)
                 Button("Cancel") { model.cancel() }.keyboardShortcut(".", modifiers: .command).disabled(!model.isRunning)
+                Button("Clear Result") { model.clearResult() }.keyboardShortcut("k", modifiers: .command).disabled(!model.canClear)
                 Divider()
                 Picker("Mode", selection: $model.mode) {
                     ForEach(Mode.allCases) { Text($0.title).tag($0) }

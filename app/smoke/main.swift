@@ -96,6 +96,12 @@ struct Smoke {
                   "email report decodes (overall \(em.overall.status): mx \(em.mx.verdict.status), spf \(em.spf.totalLookups) lookups \(em.spf.verdict.status), dkim \(em.dkim.verdict.status), dmarc \(em.dmarc.verdict.status), mta-sts \(em.mtaSts.verdict.status), bimi \(em.bimi.verdict.status), dnsbl \(em.dnsbl.verdict.status))")
             print("     \(em.overall.message)")
 
+            // 13e. zone health from the real root servers, decoded through the Swift mirror.
+            let hz: HealthResult = try await core.call("health", HealthParams(domain: "cloudflare.com", endpoint: cf, options: Options(), bootstrap: []))
+            check(hz.zone == "cloudflare.com." && hz.delegation.verdict.status == "ok" && hz.nameservers.servers.contains { $0.authoritative } && hz.dnssec.status == "secure" && hz.soa.record != nil,
+                  "health report decodes (overall \(hz.overall.status): \(hz.nameservers.servers.count) addresses, dnssec \(hz.dnssec.status), caa \(hz.caa.verdict.status))")
+            print("     \(hz.overall.message)")
+
             // 13d. registration data: RDAP for a gTLD, WHOIS fallback for a ccTLD without RDAP.
             let rd: RDAPResult = try await core.call("rdap", RDAPParams(domain: "n0rdy.foo", endpoint: cf, options: Options(), bootstrap: []))
             check(rd.source == "rdap" && rd.found && rd.registrar.name != nil && rd.expires != nil && !rd.nameservers.isEmpty,

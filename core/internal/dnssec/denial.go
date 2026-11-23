@@ -30,28 +30,8 @@ type proof struct {
 // accepting only records validly signed by keys of zone.
 func denial(m *dns.Msg, name string, qtype uint16, keys []*dns.DNSKEY, zone string, now time.Time) proof {
 	p := proof{kind: proofNone}
-	var nsecs []*dns.NSEC
-	var nsec3s []*dns.NSEC3
-	sawBad := false
-	for _, s := range rrsets(m.Ns) {
-		if s.typ != dns.TypeNSEC && s.typ != dns.TypeNSEC3 {
-			continue
-		}
-		sigs, ok := verifySet(s, keys, zone, now)
-		p.signatures = append(p.signatures, sigs...)
-		if !ok {
-			sawBad = true
-			continue
-		}
-		for _, rr := range s.rrs {
-			switch v := rr.(type) {
-			case *dns.NSEC:
-				nsecs = append(nsecs, v)
-			case *dns.NSEC3:
-				nsec3s = append(nsec3s, v)
-			}
-		}
-	}
+	nsecs, nsec3s, sigs, sawBad := denialSets(m, keys, zone, now)
+	p.signatures = sigs
 	name = dns.Fqdn(strings.ToLower(name))
 	if len(nsecs) > 0 {
 		return nsecProof(p, nsecs, name, qtype)
@@ -66,6 +46,68 @@ func denial(m *dns.Msg, name string, qtype uint16, keys []*dns.DNSKEY, zone stri
 	}
 	p.reason = "no NSEC or NSEC3 records prove anything about " + name
 	return p
+}
+
+// denialSets collects the NSEC and NSEC3 records in m's authority section
+// that are validly signed by zone. bad is true when some were present but
+// failed verification.
+func denialSets(m *dns.Msg, keys []*dns.DNSKEY, zone string, now time.Time) (nsecs []*dns.NSEC, nsec3s []*dns.NSEC3, sigs []Signature, bad bool) {
+	for _, s := range rrsets(m.Ns) {
+		if s.typ != dns.TypeNSEC && s.typ != dns.TypeNSEC3 {
+			continue
+		}
+		ss, ok := verifySet(s, keys, zone, now)
+		sigs = append(sigs, ss...)
+		if !ok {
+			bad = true
+			continue
+		}
+		for _, rr := range s.rrs {
+			switch v := rr.(type) {
+			case *dns.NSEC:
+				nsecs = append(nsecs, v)
+			case *dns.NSEC3:
+				nsec3s = append(nsec3s, v)
+			}
+		}
+	}
+	return nsecs, nsec3s, sigs, bad
+}
+
+// wildcardProof checks that m's authority section proves name itself does
+// not exist, so expanding wild for it was legitimate (RFC 4035 §5.3.4,
+// RFC 5155 §8.8). Without that proof a signed wildcard answer could be
+// replayed for a name that has records of its own. It returns Secure, Bogus
+// (no proof), or Indeterminate (NSEC3 present but unusable).
+func wildcardProof(m *dns.Msg, name, wild string, keys []*dns.DNSKEY, zone string, now time.Time) (string, string, []Signature) {
+	nsecs, nsec3s, sigs, _ := denialSets(m, keys, zone, now)
+	name = dns.Fqdn(strings.ToLower(name))
+	ce := strings.TrimPrefix(strings.ToLower(wild), "*.")
+	if ce == "" {
+		ce = "."
+	}
+	for _, n := range nsecs {
+		if nsecCovers(n, name) && strings.EqualFold(closestEncloser(name, n), ce) {
+			return Secure, "", sigs
+		}
+	}
+	if len(nsec3s) > 0 {
+		for _, n := range nsec3s {
+			if n.Iterations > 150 {
+				return Indeterminate, "NSEC3 iterations " + itoa(int(n.Iterations)) + " exceed the limit; cannot check the wildcard expansion for " + prose(name) + " (RFC 9276)", sigs
+			}
+		}
+		// The closest encloser is implied by the RRSIG labels; only the next
+		// closer name needs a covering NSEC3.
+		labels := dns.SplitDomainName(name)
+		if k := dns.CountLabel(ce) + 1; k <= len(labels) {
+			nc := strings.Join(labels[len(labels)-k:], ".") + "."
+			if nsec3Cover(nsec3s, nc) != nil {
+				return Secure, "", sigs
+			}
+		}
+	}
+	return Bogus, prose(name) + " was answered from the wildcard " + prose(wild) + ", but the response does not prove that " + prose(name) + " itself does not exist (RFC 4035 §5.3.4)", sigs
 }
 
 // --- NSEC --------------------------------------------------------------------

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/miekg/dns"
+
 	"github.com/n0rdy/nordyg/core/internal/bridge"
 	"github.com/n0rdy/nordyg/core/internal/contract"
 	"github.com/n0rdy/nordyg/core/internal/testdns"
@@ -229,5 +231,26 @@ func TestCancel(t *testing.T) {
 	_, err := op.Run(ctx, Params{Domain: "good.test", Endpoint: contract.Endpoint{Transport: "udp", Address: addr}})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("want cancelled, got %v", err)
+	}
+}
+
+func TestMXLookupFailureIsNotUnresolvable(t *testing.T) {
+	op, _ := newOp(t)
+	// A resolver that answers the MX query but never the host's address
+	// queries: the host could not be checked, which is not the same as it
+	// having no address.
+	zone := testdns.Zone(t, "flaky.test. 300 IN MX 10 mx.flaky.test.")
+	addr := testdns.UDP(t, func(q *dns.Msg) *dns.Msg {
+		if strings.EqualFold(q.Question[0].Name, "mx.flaky.test.") {
+			return nil
+		}
+		return zone(q)
+	})
+	res, err := op.Run(context.Background(), Params{Domain: "flaky.test", Endpoint: contract.Endpoint{Transport: "udp", Address: addr}, Options: contract.Options{TimeoutMS: 200}, DKIMSelectors: []string{"x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.MX.Verdict.Status != Warn || !strings.Contains(res.MX.Verdict.Message, "could not be looked up") {
+		t.Fatalf("mx: %+v", res.MX.Verdict)
 	}
 }
