@@ -23,7 +23,7 @@ struct DNSSECView: View {
                         if let a = r.trustAnchor {
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text("trust anchor").font(.caption).foregroundStyle(.secondary)
-                                Text("KSK \(a.keyTag) · \(a.algorithmName)").font(.system(.callout, design: .monospaced))
+                                Text(verbatim: "KSK \(a.keyTag) · \(a.algorithmName)").font(.system(.callout, design: .monospaced))
                             }
                         }
                     }
@@ -79,7 +79,7 @@ struct RelatedChain: View {
                 Text("Then").font(.headline)
                 TypeBadge(type: related.type)
                 Text(prose(related.name)).font(.system(.headline, design: .monospaced))
-                Text("in \(proseZone(related.signer))").font(.headline).foregroundStyle(.secondary)
+                Text(verbatim: "in \(proseZone(related.signer))").font(.headline).foregroundStyle(.secondary)
                 StatusBadge(status: related.status)
             }
             .textSelection(.enabled)
@@ -162,7 +162,7 @@ struct LinkCard: View {
                 ForEach(Array(link.dnskeys.enumerated()), id: \.offset) { _, k in
                     HStack(spacing: 8) {
                         Pill(text: k.role.uppercased(), color: k.role == "ksk" ? .yellow : .secondary, mono: true)
-                        Text("tag \(k.keyTag) · \(k.algorithmName)").font(.system(.callout, design: .monospaced))
+                        Text(verbatim: "tag \(k.keyTag) · \(k.algorithmName)").font(.system(.callout, design: .monospaced))
                         if k.trustAnchor == true { Pill(text: "trust anchor", icon: "anchor", color: .green) }
                     }
                 }
@@ -172,7 +172,7 @@ struct LinkCard: View {
                 ForEach(Array(link.ds.enumerated()), id: \.offset) { _, d in
                     HStack(spacing: 8) {
                         Image(systemName: d.matchesDnskey ? "checkmark.circle.fill" : "xmark.circle.fill").foregroundStyle(d.matchesDnskey ? Color.green : Color.red)
-                        Text("tag \(d.keyTag) · alg \(d.algorithm) · digest \(d.digestType)").font(.system(.callout, design: .monospaced))
+                        Text(verbatim: "tag \(d.keyTag) · alg \(d.algorithm) · digest \(d.digestType)").font(.system(.callout, design: .monospaced))
                         Text(d.matchesDnskey ? "matches a key" : "matches nothing").font(.callout).foregroundStyle(d.matchesDnskey ? Color.secondary : Color.red)
                     }
                 }
@@ -195,8 +195,8 @@ struct SignatureRow: View {
         HStack(spacing: 6) {
             Image(systemName: sig.valid ? "checkmark.seal.fill" : "xmark.seal.fill").foregroundStyle(sig.valid ? Color.green : Color.red)
             TypeBadge(type: sig.typeCovered)
-            Text("\(prose(sig.name)) signed by \(prose(sig.signer)) key \(sig.keyTag), \(expires)")
-            if let e = sig.error { Text("— \(e)").foregroundStyle(.red) }
+            Text(verbatim: "\(prose(sig.name)) signed by \(prose(sig.signer)) key \(sig.keyTag), \(expires)")
+            if let e = sig.error { Text(verbatim: "· \(e)").foregroundStyle(.red) }
         }
         .font(.system(.callout, design: .monospaced))
         .textSelection(.enabled)

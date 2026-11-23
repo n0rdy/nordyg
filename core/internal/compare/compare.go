@@ -103,7 +103,15 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 
 	out := &Result{QuestionSent: r.Question(), Results: entries}
 	out.Groups = group(entries)
-	out.Consistent = len(out.Groups) == 1 && out.Groups[0].Key != ErrorKey
+	// Consistent means every resolver that answered agrees; resolvers that
+	// failed are reported in the error group, not counted as disagreeing.
+	answered := 0
+	for _, g := range out.Groups {
+		if g.Key != ErrorKey {
+			answered++
+		}
+	}
+	out.Consistent = answered == 1
 	return out, nil
 }
 
@@ -123,10 +131,15 @@ func (op *Op) one(ctx context.Context, p Params, ep contract.Endpoint) Entry {
 }
 
 // Key computes the grouping key for a message: rcode plus the sorted set of
-// "TYPE rdata" strings from the answer section. TTLs and order are ignored.
+// "TYPE rdata" strings from the answer section. TTLs, order and RRSIGs are
+// ignored: signatures differ per fetch (on-the-fly signers make a new one for
+// every response), so they would split resolvers that agree on the data.
 func Key(m *contract.Message) (key string, answers []string) {
 	answers = make([]string, 0, len(m.Answer))
 	for _, rr := range m.Answer {
+		if rr.Type == "RRSIG" {
+			continue
+		}
 		answers = append(answers, rr.Type+" "+rr.Rdata)
 	}
 	sort.Strings(answers)
@@ -182,6 +195,9 @@ func group(entries []Entry) []Group {
 func rdataOnly(m *contract.Message) []string {
 	out := make([]string, 0, len(m.Answer))
 	for _, rr := range m.Answer {
+		if rr.Type == "RRSIG" {
+			continue
+		}
 		out = append(out, rr.Rdata)
 	}
 	sort.Strings(out)

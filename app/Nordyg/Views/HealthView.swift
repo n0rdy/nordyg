@@ -9,9 +9,8 @@ struct HealthView: View {
         VStack(spacing: 0) {
             StatusStrip {
                 VerdictPill(verdict: result.overall)
-                Text(result.overall.message).font(.callout)
-                Spacer()
-                Text(prose(result.zone)).font(.system(.callout, design: .monospaced).weight(.semibold))
+                // Name the zone unless the message already does.
+                Text(verbatim: result.overall.message.contains(prose(result.zone)) ? result.overall.message : "\(prose(result.zone)): \(result.overall.message)").font(.callout)
             }
             Divider()
             ScrollView {
@@ -33,8 +32,10 @@ struct HealthView: View {
 /// Findings under a card, each with its own severity icon.
 struct FindingList: View {
     var findings: [Verdict]
+    /// The card's verdict, which is not repeated as a finding.
+    var verdict: Verdict? = nil
     var body: some View {
-        let shown = findings.filter { $0.status != "ok" }
+        let shown = findings.filter { $0.status != "ok" && $0.message != verdict?.message }
         if !shown.isEmpty {
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(shown.enumerated()), id: \.offset) { _, f in
@@ -53,7 +54,8 @@ struct FindingList: View {
 struct DelegationCard: View {
     var d: HealthDelegation
     var body: some View {
-        CheckCard("Delegation", subtitle: d.parent.isEmpty ? "NS" : "NS at \(proseZone(d.parent)) vs the zone", verdict: d.verdict) {
+        CheckCard("Delegation", subtitle: d.parent.isEmpty || d.parentNs.isEmpty ? "NS" : "NS at \(proseZone(d.parent)) vs the zone", verdict: d.verdict,
+                  hasDetails: !(d.parentNs.isEmpty && d.childNs.isEmpty) || d.findings.contains { $0.status != "ok" && $0.message != d.verdict.message }) {
             let names = Array(Set(d.parentNs + d.childNs)).sorted()
             if !names.isEmpty {
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 3) {
@@ -71,7 +73,7 @@ struct DelegationCard: View {
                     }
                 }
             }
-            FindingList(findings: d.findings)
+            FindingList(findings: d.findings, verdict: d.verdict)
         }
     }
 }
@@ -86,15 +88,17 @@ struct Presence: View {
 struct ZoneServersCard: View {
     var section: HealthNameservers
     var body: some View {
-        CheckCard("Nameservers", subtitle: "every address, asked directly", verdict: section.verdict, startOpen: true) {
+        CheckCard("Nameservers", subtitle: "every address, asked directly", verdict: section.verdict, startOpen: true, hasDetails: !section.servers.isEmpty) {
             ScrollView(.horizontal, showsIndicators: false) {
                 Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
                     GridRow {
-                        ForEach(["", "nameserver", "address", "serial", "UDP", "TCP", "EDNS", "AXFR", "recursion", "time"], id: \.self) { h in
+                        ForEach(["", "nameserver", "address", "serial", "authoritative", "TCP", "EDNS", "zone transfer", "recursion", "time"], id: \.self) { h in
                             Text(h).foregroundStyle(.secondary)
                         }
                     }
-                    ForEach(Array(section.servers.enumerated()), id: \.offset) { _, s in
+                    // Addresses skipped for lack of an IPv6 route are summed up
+                    // in one note below; a row each would drown the real ones.
+                    ForEach(Array(section.servers.filter { !$0.skipped }.enumerated()), id: \.offset) { _, s in
                         GridRow {
                             Image(systemName: VerdictStyle.icon(s.status)).foregroundStyle(VerdictStyle.color(s.status))
                             Text(prose(s.name)).fontWeight(.semibold)
@@ -103,7 +107,7 @@ struct ZoneServersCard: View {
                             if s.skipped {
                                 Text("not checked: no IPv6 route on this Mac").foregroundStyle(.secondary).gridCellColumns(6)
                             } else {
-                                Check(ok: s.answered && s.authoritative, label: s.answered ? (s.authoritative ? "AA" : (s.rcode ?? "?")) : "no answer")
+                                Check(ok: s.answered && s.authoritative, label: s.answered ? (s.authoritative ? "yes" : (s.rcode == "NOERROR" ? "no" : (s.rcode ?? "?"))) : "no answer")
                                 Check(ok: s.tcp, label: s.tcp ? "yes" : "no")
                                 Check(ok: s.edns, label: s.edns ? "yes" : "no", warnOnly: true)
                                 Check(ok: s.axfr != "allowed", label: axfrLabel(s.axfr), warnOnly: true)
@@ -114,7 +118,7 @@ struct ZoneServersCard: View {
                     }
                 }
             }
-            FindingList(findings: section.findings)
+            FindingList(findings: section.findings, verdict: section.verdict)
         }
     }
 
@@ -141,7 +145,7 @@ struct Check: View {
 struct SOACard: View {
     var section: HealthSOA
     var body: some View {
-        CheckCard("Start of authority", subtitle: "SOA", verdict: section.verdict) {
+        CheckCard("Start of authority", subtitle: "SOA", verdict: section.verdict, hasDetails: section.record != nil) {
             if let r = section.record {
                 Text(r.rdata).textSelection(.enabled)
                 if let f = r.fields {
@@ -166,7 +170,7 @@ struct SOACard: View {
                     }
                 }
             }
-            FindingList(findings: section.findings)
+            FindingList(findings: section.findings, verdict: section.verdict)
         }
     }
 }
@@ -197,7 +201,7 @@ enum SOAGlossary {
 struct GlueCard: View {
     var section: HealthGlue
     var body: some View {
-        CheckCard("Glue", subtitle: "addresses the parent hands out", verdict: section.verdict) {
+        CheckCard("Glue", subtitle: "addresses the parent hands out", verdict: section.verdict, hasDetails: !section.entries.isEmpty) {
             let inside = section.entries.filter(\.inBailiwick)
             if inside.isEmpty {
                 Text("Every nameserver is outside the zone, so resolvers look its address up separately.").foregroundStyle(.secondary).font(.callout)
@@ -219,7 +223,7 @@ struct GlueCard: View {
                     }
                 }
             }
-            FindingList(findings: section.findings)
+            FindingList(findings: section.findings, verdict: section.verdict)
         }
     }
 }
@@ -227,11 +231,11 @@ struct GlueCard: View {
 struct ZoneDNSSECCard: View {
     var section: HealthDNSSEC
     var body: some View {
-        CheckCard("Signing", subtitle: "DNSSEC", verdict: section.verdict) {
+        CheckCard("Signing", subtitle: "DNSSEC", verdict: section.verdict, hasDetails: !section.status.isEmpty) {
             if !section.status.isEmpty {
                 HStack(spacing: 8) {
                     StatusBadge(status: section.status)
-                    if let r = section.result, !r.reason.isEmpty { Text(r.reason).foregroundStyle(.secondary).textSelection(.enabled) }
+                    if let r = section.result, !r.reason.isEmpty, !section.verdict.message.contains(r.reason) { Text(r.reason).foregroundStyle(.secondary).textSelection(.enabled) }
                 }
             }
             ForEach(Array(section.ds.enumerated()), id: \.offset) { _, d in
@@ -245,7 +249,7 @@ struct ZoneDNSSECCard: View {
                     .font(.body)
                     .padding(.top, 4)
             }
-            FindingList(findings: section.findings)
+            FindingList(findings: section.findings, verdict: section.verdict)
         }
     }
 }
@@ -253,8 +257,8 @@ struct ZoneDNSSECCard: View {
 struct CAACard: View {
     var section: HealthCAA
     var body: some View {
-        CheckCard("Certificate authorities", subtitle: "CAA", verdict: section.verdict) {
-            if let at = section.foundAt { Text("found at \(prose(at))").foregroundStyle(.secondary) }
+        CheckCard("Certificate authorities", subtitle: "CAA", verdict: section.verdict, hasDetails: !section.records.isEmpty) {
+            if let at = section.foundAt { Text(verbatim: "found at \(prose(at))").foregroundStyle(.secondary) }
             ForEach(Array(section.records.enumerated()), id: \.offset) { _, c in
                 HStack(spacing: 8) {
                     Text(c.tag).fontWeight(.semibold).frame(minWidth: 70, alignment: .leading)
@@ -262,7 +266,7 @@ struct CAACard: View {
                     if c.flags & 128 != 0 { Pill(text: "critical", color: .orange) }
                 }
             }
-            FindingList(findings: section.findings)
+            FindingList(findings: section.findings, verdict: section.verdict)
         }
     }
 }

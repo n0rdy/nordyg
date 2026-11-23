@@ -19,7 +19,7 @@ import (
 
 func checkDelegation(d *Delegation, apex string, servers []Server, extra map[string][]string) {
 	if n := len(d.ParentNS); n < 2 {
-		d.add(Warn, "the parent lists only %d nameserver; RFC 1034 asks for at least two, on separate networks", n)
+		d.add(Warn, "the parent lists only %d nameserver, but RFC 1034 asks for at least two, on separate networks", n)
 	}
 	authoritative := 0
 	sets := map[string][]string{}
@@ -212,7 +212,7 @@ func checkSOA(servers []Server, apex string) SOA {
 		sec.add(Warn, "retry (%s) should be shorter than refresh (%s)", dur(soa.Retry), dur(soa.Refresh))
 	}
 	if soa.Expire < 7*86400 {
-		sec.add(Warn, "expire is %s: secondaries stop serving the zone that soon after losing the primary; a week or more is usual", dur(soa.Expire))
+		sec.add(Warn, "expire is %s, so secondaries stop serving the zone that soon after losing the primary. A week or more is usual", dur(soa.Expire))
 	}
 	if soa.Expire <= soa.Refresh {
 		sec.add(Warn, "expire (%s) is not longer than refresh (%s), so secondaries can expire the zone between refreshes", dur(soa.Expire), dur(soa.Refresh))
@@ -321,7 +321,7 @@ func (op *Op) checkGlue(ctx context.Context, apex string, ref *trace.Referral, s
 		case authIP == "":
 			sec.add(Info, "the zone's own records for %s could not be read, so its glue was not compared", prose(name))
 		case len(e.Child) == 0:
-			sec.add(Warn, "the zone has no A or AAAA record for its own nameserver %s; only the parent's glue points at it", prose(name))
+			sec.add(Warn, "the zone has no A or AAAA record for its own nameserver %s, so only the parent's glue points at it", prose(name))
 		case !e.Match && !overlaps(e.Parent, e.Child):
 			sec.add(Fail, "the parent's glue for %s (%s) has no address in common with the zone's own records (%s)", prose(name), strings.Join(e.Parent, ", "), strings.Join(e.Child, ", "))
 		case !e.Match:
@@ -402,7 +402,7 @@ func checkDNSSEC(tr *trace.Result, ref *trace.Referral, servers []Server, apex s
 			left := sig.ExpiresInMS
 			period := sig.Expiration.Sub(sig.Inception).Milliseconds()
 			if left < 3*86400*1000 && (period <= 0 || left*5 < period) {
-				sec.add(Warn, "the zone's signatures expire in %s, near the end of their validity; if re-signing has stopped the zone turns bogus then", dur(uint32(max(left, 0)/1000)))
+				sec.add(Warn, "the zone's signatures expire in %s, near the end of their validity. If re-signing has stopped, the zone turns bogus then", dur(uint32(max(left, 0)/1000)))
 			}
 		}
 	}
@@ -450,10 +450,10 @@ func dsHygiene(sec *DNSSEC) {
 		}
 	}
 	if sha1Only {
-		sec.add(Warn, "every DS record uses a SHA-1 digest, which RFC 8624 retires; publish a SHA-256 DS")
+		sec.add(Warn, "every DS record uses a SHA-1 digest, which RFC 8624 retires. Publish a SHA-256 DS")
 	}
 	for a := range weakAlg {
-		sec.add(Warn, "the zone signs with %s, an algorithm RFC 8624 retires; ECDSAP256SHA256 or ED25519 are the usual choices", dns.AlgorithmToString[a])
+		sec.add(Warn, "the zone signs with %s, an algorithm RFC 8624 retires. ECDSAP256SHA256 or ED25519 are the usual choices", dns.AlgorithmToString[a])
 	}
 }
 
@@ -530,9 +530,9 @@ func checkCAA(ctx context.Context, r *resolver, domain string) CAA {
 	}
 	if wildSeen {
 		if len(wild) == 0 {
-			okMsg += "; no CA may issue wildcards"
+			okMsg += ", but no CA may issue wildcards"
 		} else {
-			okMsg += "; wildcards: " + strings.Join(wild, ", ")
+			okMsg += ", and for wildcards " + strings.Join(wild, ", ")
 		}
 	}
 	sec.settle(okMsg)

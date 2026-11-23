@@ -1,13 +1,13 @@
+import Combine
 import Foundation
 import SwiftUI
 
 enum Mode: String, CaseIterable, Identifiable {
-    case query, compare, trace, email, registry, health
+    case query, trace, email, registry, health
     var id: String { rawValue }
     var title: String {
         switch self {
         case .query: return "Query"
-        case .compare: return "Compare"
         case .trace: return "Trace"
         case .email: return "Email"
         case .registry: return "Registry"
@@ -20,8 +20,7 @@ extension Mode {
     /// One line for the mode picker's tooltip.
     var summary: String {
         switch self {
-        case .query: return "Ask one resolver and see everything it returned."
-        case .compare: return "Ask several resolvers at once and see where they differ."
+        case .query: return "Ask one resolver, or several at once, and see everything they returned."
         case .trace: return "Follow the delegation from the root servers to the answer."
         case .email: return "Check a mail domain's MX, SPF, DKIM, DMARC, MTA-STS, BIMI and blocklists."
         case .registry: return "See who registered a domain, when it expires and its status, via RDAP or WHOIS."
@@ -29,28 +28,50 @@ extension Mode {
         }
     }
 
-    /// The fuller explanation shown before the mode has been run.
+    /// One or two sentences for the start panel shown before the mode runs.
     var explanation: String {
         switch self {
         case .query:
-            return "Ask one resolver and see everything it returned: flags, every section, EDNS options, timing, the raw message, and a DNSSEC chain that Nordyg checks itself. An IP address runs a reverse lookup. ALL asks for the common types at once."
-        case .compare:
-            return "Ask several resolvers the same question at once and see where their answers differ. Pick the resolvers from the token in the bar."
+            return "Ask a resolver what it has for a name and see everything it sent back, with a DNSSEC check Nordyg does itself.\nPick “Several resolvers…” in the resolver menu to compare them."
         case .trace:
-            return "Follow the delegation from the root servers down to the server that holds the answer, one hop at a time, without any cache in the way."
+            return "Follow a name from the root servers down to the server that holds the answer, one hop at a time, with no cache in the way."
         case .email:
-            return "Check a mail domain: MX hosts and their reverse records, SPF and its lookup count, DKIM keys, the DMARC policy, MTA-STS, BIMI and blocklists, each with a verdict."
+            return "Check whether a domain's mail is set up right: MX, SPF, DKIM, DMARC, MTA-STS, BIMI and blocklists, each with a verdict."
         case .registry:
-            return "Look up who registered a domain, when it expires, its status codes, and the nameservers the registry has on file. Uses RDAP, and WHOIS for the TLDs that have no RDAP."
+            return "See who registered a domain, when it expires and its status, from RDAP, or from WHOIS where a TLD has no RDAP."
         case .health:
-            return "Is this domain's DNS set up correctly? Nordyg finds what the parent zone delegates to, asks every nameserver directly, and compares their answers: serials, NS sets, glue, TCP, zone transfers, open recursion, DNSSEC and CAA."
+            return "Check that a domain's DNS is delegated and served correctly, by asking every one of its nameservers directly."
+        }
+    }
+
+    /// Clickable examples for the start panel: each shows a feature by doing it.
+    var examples: [ModeExample] {
+        switch self {
+        case .query:
+            return [
+                ModeExample(name: "cloudflare.com", type: "A"),
+                ModeExample(name: "1.1.1.1", type: "A", note: "reverse lookup"),
+                ModeExample(name: "dnssec-failed.org", type: "A", note: "broken DNSSEC"),
+                ModeExample(name: "cloudflare.com", type: "ALL", note: "every common type"),
+                ModeExample(name: "cloudflare.com", type: "A", note: "several resolvers", several: true),
+            ]
+        case .trace:
+            return [
+                ModeExample(name: "cloudflare.com", type: "A"),
+                ModeExample(name: "dnssec-failed.org", type: "A", note: "broken DNSSEC"),
+            ]
+        case .email:
+            return [ModeExample(name: "cloudflare.com"), ModeExample(name: "proton.me")]
+        case .registry:
+            return [ModeExample(name: "cloudflare.com"), ModeExample(name: "about.me", note: "WHOIS, .me has no RDAP")]
+        case .health:
+            return [ModeExample(name: "cloudflare.com"), ModeExample(name: "dnssec-failed.org", note: "broken DNSSEC")]
         }
     }
 
     var icon: String {
         switch self {
         case .query: return "magnifyingglass"
-        case .compare: return "square.split.2x1"
         case .trace: return "point.topleft.down.to.point.bottomright.curvepath"
         case .email: return "envelope"
         case .registry: return "building.columns"
@@ -58,13 +79,13 @@ extension Mode {
         }
     }
 
-    /// What to type, for the empty state's last line.
+    /// What to type, for the start panel.
     var prompt: String {
         switch self {
-        case .query, .compare, .trace: return "Type a name or an IP address and press ⌘↩."
-        case .email: return "Type a mail domain and press ⌘↩."
-        case .registry: return "Type a registered domain and press ⌘↩."
-        case .health: return "Type a domain and press ⌘↩."
+        case .query, .trace: return "Type a name or an IP address and press ⌘↩, or try"
+        case .email: return "Type a mail domain and press ⌘↩, or try"
+        case .registry: return "Type a registered domain and press ⌘↩, or try"
+        case .health: return "Type a domain and press ⌘↩, or try"
         }
     }
 
@@ -95,7 +116,7 @@ enum Outcome {
     var mode: Mode {
         switch self {
         case .query: return .query
-        case .compare: return .compare
+        case .compare: return .query
         case .trace: return .trace
         case .email: return .email
         case .registry: return .registry
@@ -112,6 +133,15 @@ final class AppModel: ObservableObject {
     @Published var mode: Mode = .query
     @Published var selected: Endpoint?
     @Published var compareSelection: Set<Endpoint> = []
+    /// Query asks every resolver in `compareSelection` instead of `selected`
+    /// and shows the comparison grid (what used to be the Compare mode).
+    @Published var severalResolvers = false {
+        didSet { if severalResolvers, type == "ALL" { type = "A" } }
+    }
+    /// The several-resolvers checklist popover is open.
+    @Published var showResolverChecklist = false
+    /// The compared resolver whose full answer is open (index into results).
+    @Published var compareDetail: Int?
     @Published var validate = true
     @Published var options = Options()
     @Published var dkimSelector = ""
@@ -119,15 +149,19 @@ final class AppModel: ObservableObject {
     // Choices
     @Published var systemEndpoints: [Endpoint] = []
     @Published var presets: [Preset] = []
-    @Published var customEndpoints: [Endpoint] = []
+    @Published var customEndpoints: [Endpoint] = CustomResolverStore.load()
     @Published var coreVersion = ""
 
     // Outcome
     @Published var isRunning = false
     /// The last result of each mode, so tabs keep their own result.
     @Published var outcomes: [Mode: Outcome] = [:]
+    /// The failed run of each mode, shown in place of its result.
+    @Published var runErrors: [Mode: CoreError] = [:]
     /// The mode whose run is in flight, so only that tab shows progress.
     @Published var runningMode: Mode?
+    /// The name being asked about, for the progress overlay.
+    @Published var runningName = ""
     /// The visible tab's result.
     var outcome: Outcome? { outcomes[mode] }
     @Published var resultVersion = 0
@@ -140,19 +174,40 @@ final class AppModel: ObservableObject {
     @Published var authoritative: [String: AuthoritativeAnswer] = [:]
     @Published var fetchingAuthoritative: Set<String> = []
     @Published var systemView: [String]?
+    /// The name `systemView` was looked up for, so it is only ever compared
+    /// with an answer for that same name.
+    @Published var systemViewName = ""
     @Published var errorMessage: String?
     @Published var history: [HistoryItem] = HistoryStore.load()
+    /// The result tab chosen in each mode (Records/Details/…), kept across runs
+    /// so re-running a query stays on the tab being looked at.
+    @Published var resultTabs: [Mode: String] = [:]
+    /// Sidebar shows only this mode's history; nil shows all.
+    @Published var historyFilter: Mode?
 
     private var task: Task<Void, Never>?
     private let core = Core.shared
 
+    private var watchChanges: AnyCancellable?
+
     init() {
         watches.bootstrap = { [weak self] in self?.bootstrap ?? [] }
+        // The scene (menu bar icon, toolbar) observes the model; pass watch
+        // changes through so they re-render too.
+        watchChanges = watches.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
     /// Every endpoint the picker offers, in display order.
     var allEndpoints: [Endpoint] {
         systemEndpoints + presets.flatMap { p in p.endpoints.filter { !$0.needsPlaceholder } } + customEndpoints
+    }
+
+    /// Presets as one entry per provider, for the compact resolver pickers.
+    var providers: [Provider] {
+        presets.compactMap { p in
+            let usable = p.endpoints.filter { !$0.needsPlaceholder }
+            return usable.isEmpty ? nil : Provider(name: p.name, all: usable)
+        }
     }
 
     /// Bootstrap resolvers for DoH: the system ones, plain UDP.
@@ -187,8 +242,8 @@ final class AppModel: ObservableObject {
         let n = name.trimmingCharacters(in: .whitespaces)
         if n.isEmpty || isRunning { return false }
         switch mode {
-        case .query, .email, .registry, .health: return selected != nil
-        case .compare: return !compareSelection.isEmpty
+        case .query: return severalResolvers ? !compareSelection.isEmpty : selected != nil
+        case .email, .registry, .health: return selected != nil
         case .trace: return true
         }
     }
@@ -202,6 +257,7 @@ final class AppModel: ObservableObject {
         let selector = dkimSelector.trimmingCharacters(in: .whitespaces)
         let question = Question(name: n, type: t, qclass: nil)
         let mode = self.mode
+        let several = mode == .query && severalResolvers
         let endpoint = selected
         let endpoints = allEndpoints.filter { compareSelection.contains($0) }
         let opts = options
@@ -209,14 +265,17 @@ final class AppModel: ObservableObject {
         let boot = bootstrap
 
         errorMessage = nil
+        runErrors[mode] = nil
         isRunning = true
         runningMode = mode
+        runningName = n
         selectedWatch = nil
         systemView = nil
-        if mode == .query, ["A", "AAAA", "ALL"].contains(t) {
+        compareDetail = nil
+        if mode == .query, !several, ["A", "AAAA", "ALL"].contains(t) {
             Task { [weak self] in
                 let addrs = await SystemLookup.addresses(for: n)
-                await MainActor.run { self?.systemView = addrs }
+                await MainActor.run { self?.systemView = addrs; self?.systemViewName = n }
             }
         }
         task = Task { [weak self] in
@@ -224,6 +283,9 @@ final class AppModel: ObservableObject {
             do {
                 let out: Outcome
                 switch mode {
+                case .query where several:
+                    let r: CompareResult = try await self.core.call("compare", CompareParams(question: question, endpoints: endpoints, options: opts, bootstrap: boot))
+                    out = .compare(r)
                 case .query:
                     guard let endpoint else { return }
                     if t == "ALL" {
@@ -232,9 +294,6 @@ final class AppModel: ObservableObject {
                         let r: QueryResult = try await self.core.call("query", QueryParams(question: question, endpoint: endpoint, options: opts, validate: validate, bootstrap: boot))
                         out = .query([r])
                     }
-                case .compare:
-                    let r: CompareResult = try await self.core.call("compare", CompareParams(question: question, endpoints: endpoints, options: opts, bootstrap: boot))
-                    out = .compare(r)
                 case .trace:
                     let r: TraceResult = try await self.core.call("trace", TraceParams(question: question, options: opts, validate: validate, bootstrap: boot, rootHints: nil))
                     out = .trace(r)
@@ -253,13 +312,17 @@ final class AppModel: ObservableObject {
                 }
                 self.outcomes[mode] = out
                 self.resultVersion += 1
-                self.remember(HistoryItem(name: n, type: mode.historyType ?? t, mode: mode.rawValue, endpoint: mode.usesResolver ? endpoint : nil))
+                // Several-resolver runs keep the history mode "compare" (what
+                // they were called before), so re-running restores them.
+                self.remember(HistoryItem(name: n, type: mode.historyType ?? t, mode: several ? "compare" : mode.rawValue, endpoint: mode.usesResolver && !several ? endpoint : nil))
             } catch is CancellationError {
                 // user cancelled
             } catch let e as CoreError {
-                if e.code != "cancelled" { self.errorMessage = e.message }
+                // A failed run replaces the tab's result: an old answer next to
+                // a new error reads as if it belonged to the new input.
+                if e.code != "cancelled" { self.failRun(mode, e) }
             } catch {
-                self.errorMessage = error.localizedDescription
+                self.failRun(mode, CoreError(code: "internal", message: error.localizedDescription, details: nil))
             }
             self.isRunning = false
             self.runningMode = nil
@@ -284,14 +347,37 @@ final class AppModel: ObservableObject {
         task?.cancel()
     }
 
+    private func failRun(_ mode: Mode, _ e: CoreError) {
+        outcomes[mode] = nil
+        runErrors[mode] = e
+        resultVersion += 1
+    }
+
+    /// From a one-resolver answer: ask the same question of several
+    /// resolvers, the one just used among them.
+    func askOtherResolvers(including ep: Endpoint) {
+        if let known = allEndpoints.first(where: { $0 == ep }) ?? selected { compareSelection.insert(known) }
+        severalResolvers = true
+        run()
+    }
+
+    /// Runs a start-panel example in the current mode.
+    func runExample(_ e: ModeExample) {
+        name = e.name
+        if let t = e.type { type = t }
+        if mode == .query { severalResolvers = e.several }
+        run()
+    }
+
     /// Empties the visible tab, which shows its explanation again.
     func clearResult() {
         outcomes[mode] = nil
+        runErrors[mode] = nil
         errorMessage = nil
         resultVersion += 1
     }
 
-    var canClear: Bool { outcome != nil && runningMode != mode }
+    var canClear: Bool { (outcome != nil || runErrors[mode] != nil) && runningMode != mode }
 
     /// Start watching the current question at the selected resolver.
     func watchCurrent(interval: Int) {
@@ -304,7 +390,7 @@ final class AppModel: ObservableObject {
         selectedWatch = w.id
     }
 
-    var canWatch: Bool { mode == .query && selected != nil && !name.trimmingCharacters(in: .whitespaces).isEmpty }
+    var canWatch: Bool { mode == .query && !severalResolvers && selected != nil && !name.trimmingCharacters(in: .whitespaces).isEmpty }
 
     // MARK: cache visibility
 
@@ -360,7 +446,13 @@ final class AppModel: ObservableObject {
     func rerun(_ item: HistoryItem) {
         name = item.name
         if !Mode.allCases.contains(where: { $0.historyType == item.type }) { type = item.type }
-        mode = Mode(rawValue: item.mode) ?? .query
+        if item.mode == "compare" {
+            mode = .query
+            severalResolvers = true
+        } else {
+            mode = Mode(rawValue: item.mode) ?? .query
+            if mode == .query { severalResolvers = false }
+        }
         if let ep = item.endpoint { selected = ep }
         run()
     }
@@ -368,11 +460,24 @@ final class AppModel: ObservableObject {
     // MARK: export
 
     func exportCommand(_ format: String) async -> String? {
-        guard let ep = selected else { return nil }
-        let q = Question(name: name.trimmingCharacters(in: .whitespaces), type: type == "ALL" ? "A" : type, qclass: nil)
+        // Several resolvers export one command each, in picker order. Trace
+        // asks no resolver; the endpoint is a placeholder the core ignores.
+        let placeholder = Endpoint(transport: "udp", address: "127.0.0.1:53", tlsName: nil, url: nil, method: nil, label: nil)
+        let endpoints = mode == .trace ? [placeholder] : (mode == .query && severalResolvers ? allEndpoints.filter { compareSelection.contains($0) } : (selected.map { [$0] } ?? []))
+        guard !endpoints.isEmpty else { return nil }
+        let n = name.trimmingCharacters(in: .whitespaces)
+        // ALL is Nordyg's own fan-out; no CLI tool has it (ANY is deprecated,
+        // RFC 8482), so it exports as one command per type it actually asks.
+        let types = type == "ALL" ? RecordTypes.fanOut : [type]
         do {
-            let r: ExportResult = try await core.call("export", ExportParams(question: q, endpoint: ep, options: options, format: format))
-            return r.command
+            var lines: [String] = []
+            for ep in endpoints {
+                for t in types {
+                    let r: ExportResult = try await core.call("export", ExportParams(question: Question(name: n, type: t, qclass: nil), endpoint: ep, options: options, format: format, trace: mode == .trace))
+                    lines.append(r.command)
+                }
+            }
+            return lines.joined(separator: "\n")
         } catch let e as CoreError {
             errorMessage = e.message
             return nil
@@ -424,7 +529,15 @@ final class AppModel: ObservableObject {
     func addCustom(_ ep: Endpoint) {
         customEndpoints.removeAll { $0.id == ep.id }
         customEndpoints.append(ep)
+        CustomResolverStore.save(customEndpoints)
         selected = ep
+    }
+
+    func removeCustom(_ ep: Endpoint) {
+        customEndpoints.removeAll { $0.id == ep.id }
+        compareSelection.remove(ep)
+        CustomResolverStore.save(customEndpoints)
+        if selected == ep { selected = systemEndpoints.first ?? allEndpoints.first }
     }
 }
 
@@ -442,4 +555,36 @@ struct AuthoritativeAnswer {
 
 enum CacheAge: Equatable {
     case unknown, checking, fresh, cached(Int), differs
+}
+
+/// One resolver operator and every address it publishes. Pickers show the
+/// provider once, with its transports; the IPv6 and secondary addresses sit
+/// behind "More addresses", since most people mean "ask Cloudflare".
+struct Provider: Identifiable {
+    var name: String
+    var all: [Endpoint]
+    var id: String { name }
+
+    static let transportOrder = ["udp", "tcp", "dot", "doh", "doq"]
+
+    /// One endpoint per transport: the first IPv4, non-secondary address.
+    var primary: [Endpoint] {
+        Provider.transportOrder.compactMap { t in
+            let ofT = all.filter { $0.transport == t }
+            return ofT.first { $0.isIPv4 && !$0.isSecondary } ?? ofT.first
+        }
+    }
+}
+
+extension Endpoint {
+    var isIPv4: Bool { !(address ?? "").contains("[") && !(address ?? "").contains("::") }
+    var isSecondary: Bool { (label ?? "").lowercased().contains("secondary") }
+}
+
+/// A start-panel example: what goes in the bar, and why it is interesting.
+struct ModeExample: Hashable {
+    var name: String
+    var type: String?
+    var note: String?
+    var several = false
 }

@@ -91,7 +91,10 @@ func (c *Client) udp(ctx context.Context, ep contract.Endpoint, q *dns.Msg, o co
 	if err != nil {
 		return nil, err
 	}
-	co := &dns.Conn{Conn: conn, UDPSize: max(o.UDPSize, dns.MinMsgSize)}
+	// o.UDPSize is what the query advertises in EDNS. Some resolvers ignore it
+	// and send larger datagrams; reading into a buffer of the advertised size
+	// would cut those off mid-record, so always read up to the maximum.
+	co := &dns.Conn{Conn: conn, UDPSize: dns.MaxMsgSize}
 	res, err := exchangeConn(ctx, co, q)
 	_ = conn.Close()
 	if err != nil {

@@ -117,7 +117,9 @@ final class WatchCenter: ObservableObject {
         do {
             let r: QueryResult = try await core.call("query", QueryParams(question: w.question, endpoint: w.endpoint, options: Options(timeoutMs: 5000), validate: false, bootstrap: bootstrap()))
             event.rcode = r.message.rcode
-            event.answers = r.message.answer.map { "\($0.type) \($0.rdata)" }.sorted()
+            // RRSIGs are left out: on-the-fly signers (Cloudflare) issue a new
+            // signature per response, which would look like a change every check.
+            event.answers = r.message.answer.filter { $0.type != "RRSIG" }.map { "\($0.type) \($0.rdata)" }.sorted()
         } catch let e as CoreError {
             event.error = e.message
         } catch {

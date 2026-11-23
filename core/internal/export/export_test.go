@@ -122,3 +122,17 @@ func code(err error) string {
 	}
 	return err.Error()
 }
+
+func TestTraceExport(t *testing.T) {
+	cmd, err := Command(Params{Question: contract.Question{Name: "example.com", Type: "A"}, Format: "dig", Trace: true})
+	if err != nil || cmd != "dig example.com A +trace +dnssec" {
+		t.Fatalf("%q %v", cmd, err)
+	}
+	for _, f := range []string{"nslookup", "doggo", "curl"} {
+		_, err := Command(Params{Question: contract.Question{Name: "example.com", Type: "A"}, Format: f, Trace: true})
+		var be *bridge.Error
+		if !errors.As(err, &be) || be.Code != contract.CodeExportUnsupported {
+			t.Errorf("%s: %v", f, err)
+		}
+	}
+}

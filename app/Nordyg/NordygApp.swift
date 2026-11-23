@@ -9,10 +9,15 @@ struct NordygApp: App {
             ContentView()
                 .environmentObject(model)
                 .environmentObject(model.watches)
-                .task { await model.load() }
+                .task {
+                    await model.load()
+                    #if DEBUG
+                    DebugHooks.install(model: model)
+                    #endif
+                }
                 .frame(minWidth: 900, minHeight: 560)
         }
-        MenuBarExtra {
+        MenuBarExtra(isInserted: Binding(get: { !model.watches.watches.isEmpty }, set: { _ in })) {
             WatchMenu()
                 .environmentObject(model.watches)
         } label: {

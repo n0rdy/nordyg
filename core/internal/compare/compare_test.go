@@ -145,3 +145,51 @@ func code(err error) string {
 	}
 	return err.Error()
 }
+
+func TestKeyIgnoresSignatures(t *testing.T) {
+	// Two resolvers with the same data but different RRSIGs (Cloudflare signs
+	// on the fly) agree.
+	mk := func(rrs ...string) *contract.Message {
+		m := &contract.Message{Rcode: "NOERROR"}
+		for _, s := range rrs {
+			rr, _ := dns.NewRR(s)
+			m.Answer = append(m.Answer, contract.Record{Type: dns.TypeToString[rr.Header().Rrtype], Rdata: rr.String()[len(rr.Header().String()):]})
+		}
+		return m
+	}
+	a := mk("x. 300 IN A 192.0.2.1", "x. 300 IN RRSIG A 13 1 300 20300101000000 20200101000000 1 x. AAAA")
+	b := mk("x. 300 IN A 192.0.2.1", "x. 300 IN RRSIG A 13 1 300 20300101000000 20200101000000 1 x. BBBB")
+	ka, answers := Key(a)
+	kb, _ := Key(b)
+	if ka != kb || len(answers) != 1 {
+		t.Fatalf("%q vs %q (%v)", ka, kb, answers)
+	}
+	if got := rdataOnly(a); len(got) != 1 || got[0] != "192.0.2.1" {
+		t.Fatalf("display answers: %v", got)
+	}
+}
+
+func TestFailureIsNotDisagreement(t *testing.T) {
+	// Two resolvers agree, one never answers: consistent, with the failure in
+	// the error group.
+	z := testdns.Zone(t, "example.test. 300 IN A 192.0.2.1")
+	a, b := testdns.UDP(t, z), testdns.UDP(t, z)
+	dead := testdns.UDP(t, testdns.Silent)
+	res, err := newOp().Run(context.Background(), Params{
+		Question:  contract.Question{Name: "example.test", Type: "A"},
+		Endpoints: []contract.Endpoint{{Transport: "udp", Address: a}, {Transport: "udp", Address: b}, {Transport: "udp", Address: dead}},
+		Options:   contract.Options{TimeoutMS: 300},
+	})
+	if err != nil || !res.Consistent || len(res.Groups) != 2 || res.Groups[1].Key != ErrorKey {
+		t.Fatalf("%+v %v", res, err)
+	}
+	// All failing is not agreement.
+	res, err = newOp().Run(context.Background(), Params{
+		Question:  contract.Question{Name: "example.test", Type: "A"},
+		Endpoints: []contract.Endpoint{{Transport: "udp", Address: dead}},
+		Options:   contract.Options{TimeoutMS: 300},
+	})
+	if err != nil || res.Consistent {
+		t.Fatalf("all failed: %+v %v", res, err)
+	}
+}

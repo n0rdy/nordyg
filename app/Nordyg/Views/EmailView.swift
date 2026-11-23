@@ -8,9 +8,7 @@ struct EmailView: View {
         VStack(spacing: 0) {
             StatusStrip {
                 VerdictPill(verdict: result.overall)
-                Text(result.overall.message).font(.callout)
-                Spacer()
-                Text(prose(result.domain)).font(.system(.callout, design: .monospaced).weight(.semibold))
+                Text(verbatim: "\(prose(result.domain)): \(result.overall.message)").font(.callout)
             }
             Divider()
             ScrollView {
@@ -36,15 +34,19 @@ struct CheckCard<Content: View>: View {
     var subtitle: String
     var verdict: Verdict
     var startOpen: Bool = false
+    /// False when there is nothing behind the verdict: no Details button
+    /// that opens onto an empty box.
+    var hasDetails: Bool = true
     @ViewBuilder var details: Content
     @State private var open: Bool
 
-    init(_ title: String, subtitle: String, verdict: Verdict, startOpen: Bool = false, @ViewBuilder details: () -> Content) {
+    init(_ title: String, subtitle: String, verdict: Verdict, startOpen: Bool = false, hasDetails: Bool = true, @ViewBuilder details: () -> Content) {
         self.title = title
         self.subtitle = subtitle
         self.verdict = verdict
+        self.hasDetails = hasDetails
         self.details = details()
-        _open = State(initialValue: startOpen || verdict.status == "fail" || verdict.status == "warn")
+        _open = State(initialValue: hasDetails && (startOpen || verdict.status == "fail" || verdict.status == "warn"))
     }
 
     var body: some View {
@@ -59,9 +61,11 @@ struct CheckCard<Content: View>: View {
                     Text(verdict.message).font(.callout).textSelection(.enabled)
                 }
                 Spacer()
-                Button(open ? "Hide" : "Details") { open.toggle() }.buttonStyle(.link).font(.callout)
+                if hasDetails {
+                    Button(open ? "Hide" : "Details") { open.toggle() }.buttonStyle(.link).font(.callout)
+                }
             }
-            if open {
+            if open && hasDetails {
                 Divider()
                 details
                     .font(.system(.callout, design: .monospaced))
@@ -78,14 +82,14 @@ struct CheckCard<Content: View>: View {
 struct MXCard: View {
     var section: MXSection
     var body: some View {
-        CheckCard("Mail servers", subtitle: "MX", verdict: section.verdict, startOpen: true) {
+        CheckCard("Mail servers", subtitle: "MX", verdict: section.verdict, startOpen: true, hasDetails: !section.hosts.isEmpty || section.nullMx) {
             if section.nullMx {
                 Text("MX 0 .  (null MX)")
             }
-            ForEach(Array(section.hosts.enumerated()), id: \.offset) { _, h in
+            ForEach(Array(section.hosts.filter { !section.nullMx || $0.exchange != "." }.enumerated()), id: \.offset) { _, h in
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
-                        Text("\(h.preference)").foregroundStyle(.secondary).frame(width: 28, alignment: .trailing)
+                        Text(verbatim: "\(h.preference)").foregroundStyle(.secondary).frame(width: 28, alignment: .trailing)
                         Text(prose(h.exchange)).fontWeight(.semibold)
                         Text(h.addresses.joined(separator: "  ")).foregroundStyle(.secondary)
                         if let e = h.error { Text(e).foregroundStyle(.red) }
@@ -93,7 +97,7 @@ struct MXCard: View {
                     ForEach(Array(h.ptr.enumerated()), id: \.offset) { _, p in
                         HStack(spacing: 6) {
                             Image(systemName: p.matches ? "arrow.uturn.left.circle.fill" : "arrow.uturn.left.circle").foregroundStyle(p.matches ? Color.green : Color.orange)
-                            Text("\(p.ip) → \(p.names.isEmpty ? "no PTR" : p.names.map(prose).joined(separator: ", "))")
+                            Text(verbatim: "\(p.ip) → \(p.names.isEmpty ? "no PTR" : p.names.map(prose).joined(separator: ", "))")
                             Text(p.matches ? "forward-confirmed" : "does not point back").foregroundStyle(p.matches ? Color.secondary : Color.orange)
                             if let e = p.error { Text(e).foregroundStyle(.red) }
                         }
@@ -109,13 +113,13 @@ struct MXCard: View {
 struct SPFCard: View {
     var section: SPFSection
     var body: some View {
-        CheckCard("Sender policy", subtitle: "SPF", verdict: section.verdict) {
+        CheckCard("Sender policy", subtitle: "SPF", verdict: section.verdict, hasDetails: !section.records.isEmpty) {
             ForEach(section.records, id: \.self) { r in Text(r).textSelection(.enabled) }
             if section.decoded != nil || !section.includes.isEmpty {
                 HStack(spacing: 8) {
                     Text("DNS lookups").foregroundStyle(.secondary)
                     LookupMeter(used: section.totalLookups)
-                    Text("\(section.totalLookups) / 10")
+                    Text(verbatim: "\(section.totalLookups) / 10")
                 }
                 .padding(.top, 4)
             }
@@ -127,7 +131,7 @@ struct SPFCard: View {
                         VStack(alignment: .leading, spacing: 1) {
                             HStack(spacing: 8) {
                                 Text(prose(inc.name)).fontWeight(.semibold)
-                                Text("\(inc.lookups) lookup\(inc.lookups == 1 ? "" : "s")").foregroundStyle(.secondary)
+                                Text(verbatim: "\(inc.lookups) lookup\(inc.lookups == 1 ? "" : "s")").foregroundStyle(.secondary)
                                 if let e = inc.error { Text(e).foregroundStyle(.red) }
                             }
                             if let r = inc.record { Text(r).foregroundStyle(.secondary).textSelection(.enabled) }
@@ -156,16 +160,22 @@ struct LookupMeter: View {
 }
 
 struct DKIMCard: View {
+    @EnvironmentObject var model: AppModel
     var section: DKIMSection
     var body: some View {
         let found = section.selectors.filter(\.found)
         let missing = section.selectors.filter { !$0.found }
         CheckCard("Signing keys", subtitle: "DKIM", verdict: section.verdict) {
+            if section.wildcard == true, let first = found.first {
+                // One wildcard answer, not the same revoked key 60 times.
+                Text(verbatim: "Every selector tried (\(found.count)) returns the same record:").foregroundStyle(.secondary)
+                Text(first.record ?? "").textSelection(.enabled)
+            } else {
             ForEach(Array(found.enumerated()), id: \.offset) { _, s in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {
                         Text(s.selector).fontWeight(.semibold)
-                        if let bits = s.decoded?["key_bits"], let kt = s.decoded?["key_type"] { Text("\(bits.display)-bit \(kt.display)").foregroundStyle(.secondary) }
+                        if let bits = s.decoded?["key_bits"], bits.display != "0", let kt = s.decoded?["key_type"] { Text(verbatim: "\(bits.display)-bit \(kt.display)").foregroundStyle(.secondary) }
                         if s.decoded?["revoked"] == .bool(true) { Text("revoked").foregroundStyle(.red) }
                         Text(prose(s.name)).foregroundStyle(.tertiary)
                     }
@@ -175,6 +185,19 @@ struct DKIMCard: View {
             if !missing.isEmpty {
                 Text("Not found at: " + missing.map(\.selector).joined(separator: ", ")).foregroundStyle(.tertiary).font(.system(.caption, design: .monospaced))
             }
+            }
+            // Providers with random or dated selectors cannot be guessed;
+            // the selector is the s= tag of a DKIM-Signature header.
+            HStack(spacing: 8) {
+                Text("Your selector").foregroundStyle(.secondary)
+                TextField("from the s= tag of a DKIM-Signature header", text: $model.dkimSelector)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 320)
+                    .onSubmit { model.run() }
+                Button("Check again") { model.run() }
+                    .disabled(model.dkimSelector.trimmingCharacters(in: .whitespaces).isEmpty || !model.canRun)
+            }
+            .padding(.top, 4)
         }
     }
 }
@@ -182,13 +205,13 @@ struct DKIMCard: View {
 struct DMARCCard: View {
     var section: DMARCSection
     var body: some View {
-        CheckCard("Policy", subtitle: "DMARC", verdict: section.verdict) {
+        CheckCard("Policy", subtitle: "DMARC", verdict: section.verdict, hasDetails: !section.records.isEmpty) {
             Text(prose(section.name)).foregroundStyle(.tertiary)
             ForEach(section.records, id: \.self) { r in Text(r).textSelection(.enabled) }
             if let tags = section.decoded?["tags"]?.objectValue {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 2) {
                     ForEach(["p", "sp", "pct", "rua", "ruf", "adkim", "aspf"], id: \.self) { k in
-                        if let v = tags[k], v != .null {
+                        if let v = tags[k], v != .null, !v.display.isEmpty, v.display != "[]" {
                             GridRow {
                                 Text(k).foregroundStyle(.secondary)
                                 Text(v.display)
@@ -206,7 +229,8 @@ struct DMARCCard: View {
 struct MTASTSCard: View {
     var section: MTASTSSection
     var body: some View {
-        CheckCard("Transport security", subtitle: "MTA-STS", verdict: section.verdict) {
+        CheckCard("Transport security", subtitle: "MTA-STS", verdict: section.verdict,
+                  hasDetails: section.record != nil || section.policyUrl != nil || section.policyText != nil || section.error != nil) {
             if let r = section.record { Text(r).textSelection(.enabled) }
             if let u = section.policyUrl { Text(u).foregroundStyle(.secondary) }
             if let t = section.policyText {
@@ -222,7 +246,7 @@ struct MTASTSCard: View {
 struct BIMICard: View {
     var section: BIMISection
     var body: some View {
-        CheckCard("Brand logo", subtitle: "BIMI", verdict: section.verdict) {
+        CheckCard("Brand logo", subtitle: "BIMI", verdict: section.verdict, hasDetails: section.record != nil) {
             if let r = section.record { Text(r).textSelection(.enabled) }
             if let l = section.logo, let url = URL(string: l) { Link(l, destination: url) }
             if let a = section.evidence, let url = URL(string: a) { Link(a, destination: url) }
@@ -233,7 +257,7 @@ struct BIMICard: View {
 struct DNSBLCard: View {
     var section: DNSBLSection
     var body: some View {
-        CheckCard("Blocklists", subtitle: "DNSBL", verdict: section.verdict) {
+        CheckCard("Blocklists", subtitle: "DNSBL", verdict: section.verdict, hasDetails: !section.checks.isEmpty) {
             let ips = Array(Set(section.checks.map(\.ip))).sorted()
             let zones = Array(Set(section.checks.map(\.zone))).sorted()
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {

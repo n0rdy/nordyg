@@ -46,6 +46,23 @@ struct Options: Codable, Hashable {
     var cookie: Bool?
 }
 
+extension Options {
+    /// Short names of the options that differ from the core's defaults.
+    var changed: [String] {
+        var out: [String] = []
+        if recursionDesired == false { out.append("RD off") }
+        if dnssecOk == false { out.append("DO off") }
+        if checkingDisabled == true { out.append("CD on") }
+        if edns == false { out.append("EDNS off") }
+        if tcpFallback == false { out.append("no TCP fallback") }
+        if nsid == true { out.append("NSID") }
+        if cookie == true { out.append("cookie") }
+        if let u = udpSize, u != 1232 { out.append("UDP \(u)") }
+        if let t = timeoutMs, t != 5000 { out.append("timeout \(t) ms") }
+        return out
+    }
+}
+
 struct Flags: Codable, Hashable {
     var qr, aa, tc, rd, ra, ad, cd: Bool
     var set: [String] {
@@ -269,6 +286,8 @@ struct ExportParams: Codable {
     var endpoint: Endpoint
     var options: Options
     var format: String
+    /// Export the walk from the root (dig +trace); endpoint is then ignored.
+    var trace: Bool? = nil
 }
 struct ExportResult: Codable { var command: String }
 
@@ -385,7 +404,7 @@ struct MXSection: Codable, Hashable { var hosts: [MXHost]; var nullMx: Bool; var
 struct SPFInclude: Codable, Hashable { var name: String; var via: String; var depth: Int; var record: String?; var decoded: JSONValue?; var lookups: Int; var error: String? }
 struct SPFSection: Codable, Hashable { var records: [String]; var decoded: JSONValue?; var includes: [SPFInclude]; var totalLookups: Int; var verdict: Verdict }
 struct DKIMSelector: Codable, Hashable { var selector: String; var name: String; var found: Bool; var record: String?; var decoded: JSONValue? }
-struct DKIMSection: Codable, Hashable { var selectors: [DKIMSelector]; var verdict: Verdict }
+struct DKIMSection: Codable, Hashable { var selectors: [DKIMSelector]; var wildcard: Bool?; var verdict: Verdict }
 struct DMARCSection: Codable, Hashable { var name: String; var records: [String]; var decoded: JSONValue?; var verdict: Verdict }
 struct MTASTSPolicy: Codable, Hashable { var version: String; var mode: String; var mx: [String]; var maxAge: Int }
 struct MTASTSSection: Codable, Hashable { var name: String; var record: String?; var id: String?; var policyUrl: String?; var policyText: String?; var policy: MTASTSPolicy?; var error: String?; var verdict: Verdict }
@@ -414,5 +433,7 @@ enum RecordTypes {
 extension Message {
     /// RFC 8767: the resolver served this answer past its TTL and said so.
     var isStale: Bool { edns?.options.contains { $0.ede?.infoCode == 3 } ?? false }
+    /// RFC 8914 EDE 15–18: Blocked, Censored, Filtered, Prohibited.
+    var isFiltered: Bool { edns?.options.contains { (15...18).contains($0.ede?.infoCode ?? 0) } ?? false }
     var addresses: [String] { answer.compactMap { ($0.type == "A" || $0.type == "AAAA") ? $0.rdata : nil } }
 }

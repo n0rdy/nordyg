@@ -18,6 +18,10 @@ struct ContentView: View {
             }
         }
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                ModeSwitcher(mode: $model.mode)
+            }
+            if model.mode == .query && !model.severalResolvers {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     ForEach(WatchCenter.intervals, id: \.self) { s in
@@ -28,6 +32,7 @@ struct ContentView: View {
                 }
                 .help("Re-run this query on a schedule and get notified when the answer changes")
                 .disabled(!model.canWatch)
+            }
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { model.clearResult() } label: {
@@ -45,6 +50,35 @@ struct ContentView: View {
                 .disabled(model.outcome == nil && model.name.isEmpty)
             }
         }
+    }
+}
+
+/// The mode switcher in the toolbar. A native segmented picker there is drawn
+/// in the toolbar's glass style with a faint grey selection that ignores the
+/// tint, so this is plain buttons with the selection filled in the accent.
+/// ⌘1…⌘6 switch modes.
+struct ModeSwitcher: View {
+    @Binding var mode: Mode
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(Mode.allCases.enumerated()), id: \.element) { i, m in
+                let selected = m == mode
+                Button { mode = m } label: {
+                    Text(m.title)
+                        .padding(.horizontal, 12).padding(.vertical, 4)
+                        .foregroundStyle(selected ? Color.white : Color.primary)
+                        .background(Capsule().fill(selected ? Color.accentColor : Color.clear))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: .command)
+                .help("\(m.summary) (⌘\(i + 1))")
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .fixedSize()
     }
 }
 
@@ -72,7 +106,11 @@ struct ResultArea: View {
             // Each tab shows its own last result, or its explanation.
             switch model.outcome {
             case .none:
-                Placeholder(running: model.runningMode == model.mode, mode: model.mode)
+                if let e = model.runErrors[model.mode], model.runningMode != model.mode {
+                    RunErrorView(error: e)
+                } else {
+                    Placeholder(running: model.runningMode == model.mode, mode: model.mode)
+                }
             case .query(let results):
                 QueryResultView(results: results)
             case .compare(let r):
@@ -89,15 +127,95 @@ struct ResultArea: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // While this tab re-runs, the old result must not pass for the new
+        // one: no clicks on it, and (after a beat) dimmed under a progress note.
+        .allowsHitTesting(!(model.runningMode == model.mode && model.outcome != nil))
+        .overlay {
+            if model.selectedWatch == nil, model.runningMode == model.mode, model.outcome != nil {
+                RunningOverlay(name: model.runningName, mode: model.mode) { model.cancel() }
+            }
+        }
         .id(model.selectedWatch?.hashValue ?? model.resultVersion)
         .transition(.opacity)
         .modifier(ResultAnimation(value: model.resultVersion))
     }
 }
 
-/// The empty state explains the selected mode, so each mode introduces
-/// itself the first time it is picked.
+/// A failed run, in the result area: what went wrong in words, the core's
+/// own message, and what to try next.
+struct RunErrorView: View {
+    var error: CoreError
+    var body: some View {
+        let (title, icon, hint) = RunErrorView.describe(error.code)
+        ContentUnavailableView {
+            Label(title, systemImage: icon)
+        } description: {
+            VStack(spacing: 10) {
+                Text(error.message.capitalizedFirst).textSelection(.enabled)
+                if let hint { Text(hint).foregroundStyle(.tertiary) }
+            }
+            .frame(maxWidth: 520)
+        }
+    }
+
+    static func describe(_ code: String) -> (String, String, String?) {
+        switch code {
+        case "bad_request", "unknown_type":
+            return ("Check what you typed", "character.cursor.ibeam", "Fix the name or type and press ⌘↩ again.")
+        case "timeout":
+            return ("No answer in time", "clock.badge.exclamationmark", "The server did not reply before the timeout. Run again, raise the timeout in the options, or pick another resolver.")
+        case "network":
+            return ("Could not reach the server", "network.slash", "Check the connection, or whether a VPN or firewall blocks this resolver.")
+        case "tls":
+            return ("Secure connection failed", "lock.trianglebadge.exclamationmark", "The resolver's certificate did not check out. Check the TLS name of a custom resolver.")
+        case "http":
+            return ("The DoH server refused", "exclamationmark.icloud", "The DNS-over-HTTPS server answered with an HTTP error. Check the URL of a custom resolver.")
+        case "bad_endpoint", "bootstrap_required", "bootstrap_failed":
+            return ("The resolver is not usable", "server.rack", "Check the resolver's address, or pick another one.")
+        case "malformed_response":
+            return ("The answer did not parse", "doc.badge.ellipsis", "The server sent something that is not a valid DNS message.")
+        case "trace_dead_end":
+            return ("The trace hit a dead end", "point.topleft.down.to.point.bottomright.curvepath", "A server on the way down did not answer or did not know the zone. Zone check shows which.")
+        default:
+            return ("The run failed", "exclamationmark.triangle", nil)
+        }
+    }
+}
+
+/// The start panel: what the mode does in a sentence, then examples that
+/// run on click. Left-aligned under the command bar, where the eye already
+/// is; a centred paragraph in the middle of the window reads poorly.
+/// Covers a tab's previous result while it re-runs. Appears after 150 ms so
+/// fast queries do not flicker.
+struct RunningOverlay: View {
+    var name: String
+    var mode: Mode
+    var cancel: () -> Void
+    @State private var visible = false
+
+    var body: some View {
+        ZStack {
+            if visible {
+                Rectangle().fill(Color(nsColor: .windowBackgroundColor).opacity(0.75))
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text(verbatim: "\(mode == .health || mode == .email ? "Checking" : "Asking about") \(name)…")
+                        .foregroundStyle(.secondary)
+                    Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
+                }
+                .padding(24)
+                .background(RoundedRectangle(cornerRadius: 12).fill(.regularMaterial))
+            }
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(150))
+            visible = true
+        }
+    }
+}
+
 struct Placeholder: View {
+    @EnvironmentObject var model: AppModel
     var running: Bool
     var mode: Mode
     var body: some View {
@@ -107,16 +225,78 @@ struct Placeholder: View {
                 Text("Asking the wire…").foregroundStyle(.secondary)
             }
         } else {
-            ContentUnavailableView {
+            VStack(alignment: .leading, spacing: 14) {
                 Label(mode.title, systemImage: mode.icon)
-            } description: {
-                VStack(spacing: 10) {
-                    Text(mode.explanation)
-                    Text(mode.prompt).foregroundStyle(.tertiary)
+                    .font(.title2.weight(.semibold))
+                // Full width (the panel's 28 pt margins on both sides): it is one
+                // or two sentences, so a reading-width cap only breaks it early.
+                Text(mode.explanation)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(mode.prompt).font(.callout).foregroundStyle(.tertiary).padding(.top, 6)
+                FlowLayout(spacing: 8) {
+                    ForEach(mode.examples, id: \.self) { e in
+                        Button { model.runExample(e) } label: {
+                            HStack(spacing: 6) {
+                                Text(e.name).font(.system(.callout, design: .monospaced))
+                                if let t = e.type, t != "A" { Text(t).font(.caption.weight(.bold)).foregroundStyle(TypeStyle.color(t)) }
+                                if let n = e.note { Text(n).font(.caption).foregroundStyle(.secondary) }
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Run this example")
+                    }
                 }
-                .frame(maxWidth: 520)
             }
+            .padding(.horizontal, 28).padding(.top, 28)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+    }
+}
+
+/// Lays children out in rows, wrapping to the next row when one is full.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(subviews, width: proposal.width ?? .infinity)
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        let width = rows.map(\.width).max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            for i in row.indices {
+                let size = subviews[i].sizeThatFits(.unspecified)
+                subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows: [Row] = [Row()]
+        for i in subviews.indices {
+            let size = subviews[i].sizeThatFits(.unspecified)
+            if !rows[rows.count - 1].indices.isEmpty, rows[rows.count - 1].width + spacing + size.width > width {
+                rows.append(Row())
+            }
+            var r = rows[rows.count - 1]
+            r.width += (r.indices.isEmpty ? 0 : spacing) + size.width
+            r.height = max(r.height, size.height)
+            r.indices.append(i)
+            rows[rows.count - 1] = r
+        }
+        return rows
     }
 }
 
@@ -125,8 +305,9 @@ struct ExportMenu: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        ForEach(["dig", "nslookup", "doggo", "curl"], id: \.self) { fmt in
-            Button("Copy as \(fmt)") {
+        // A trace is only expressible as dig +trace.
+        ForEach(model.mode == .trace ? ["dig"] : ["dig", "nslookup", "doggo", "curl"], id: \.self) { fmt in
+            Button(model.mode == .trace ? "Copy as dig +trace" : "Copy as \(fmt)") {
                 Task { if let cmd = await model.exportCommand(fmt) { Pasteboard.copy(cmd) } }
             }
         }

@@ -21,6 +21,9 @@ type Params struct {
 	Endpoint contract.Endpoint `json:"endpoint"`
 	Options  contract.Options  `json:"options"`
 	Format   string            `json:"format"`
+	// Trace exports the trace op's walk from the root instead of a query to
+	// Endpoint, which is then ignored. Only dig can express it (+trace).
+	Trace bool `json:"trace"`
 }
 
 // Result is the op output.
@@ -49,10 +52,16 @@ func Command(p Params) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	o := p.Options.Resolve()
+	if p.Trace {
+		if p.Format != "dig" {
+			return "", unsupported(p.Format, "it cannot follow delegations from the root, but dig +trace can")
+		}
+		return digTrace(r, o), nil
+	}
 	if err := p.Endpoint.Validate(); err != nil {
 		return "", err
 	}
-	o := p.Options.Resolve()
 	switch p.Format {
 	case "dig":
 		return dig(r, p.Endpoint, o)
@@ -89,6 +98,22 @@ func hostPort(addr string) (string, string) {
 }
 
 // dig: BIND 9.18+ speaks DoT (+tls) and DoH (+https); DoQ is not supported.
+// digTrace is the trace op as dig: from the root, no resolver.
+func digTrace(r contract.Resolved, o contract.Effective) string {
+	args := []string{"dig", name(r), typeName(r)}
+	if r.Class != 1 {
+		args = append(args, "-c", className(r.Class))
+	}
+	args = append(args, "+trace")
+	if o.EDNS && o.DNSSECOK {
+		args = append(args, "+dnssec")
+	}
+	if o.Timeout != contract.DefaultTimeout {
+		args = append(args, "+timeout="+strconv.Itoa(int(o.Timeout.Seconds())))
+	}
+	return join(args)
+}
+
 func dig(r contract.Resolved, ep contract.Endpoint, o contract.Effective) (string, error) {
 	args := []string{"dig"}
 	switch ep.Transport {

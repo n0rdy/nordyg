@@ -105,9 +105,9 @@ struct AnswerDiff: View {
         let added = after.filter { !before.contains($0) }
         let kept = after.filter { before.contains($0) }
         VStack(alignment: .leading, spacing: 1) {
-            ForEach(removed, id: \.self) { Text("− \($0)").foregroundStyle(.red) }
-            ForEach(added, id: \.self) { Text("+ \($0)").foregroundStyle(.green) }
-            if showUnchanged { ForEach(kept, id: \.self) { Text("  \($0)").foregroundStyle(.secondary) } }
+            ForEach(removed, id: \.self) { Text(verbatim: "− \($0)").foregroundStyle(.red) }
+            ForEach(added, id: \.self) { Text(verbatim: "+ \($0)").foregroundStyle(.green) }
+            if showUnchanged { ForEach(kept, id: \.self) { Text(verbatim: "  \($0)").foregroundStyle(.secondary) } }
             if after.isEmpty && added.isEmpty && removed.isEmpty { Text("  (no answer records)").foregroundStyle(.secondary) }
         }
         .font(.system(.callout, design: .monospaced))

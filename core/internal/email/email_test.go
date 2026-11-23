@@ -147,7 +147,8 @@ func TestBadDomain(t *testing.T) {
 	if res.DKIM.Verdict.Status != Fail || !strings.Contains(res.DKIM.Verdict.Message, "revoked") || len(res.DKIM.Selectors) != 2 {
 		t.Fatalf("dkim: %+v", res.DKIM)
 	}
-	if res.MX.Verdict.Status != Warn || !strings.Contains(res.MX.Verdict.Message, "reverse") {
+	// Reverse records matter for senders, not for MX hosts: info, not warn.
+	if res.MX.Verdict.Status != Info || !strings.Contains(res.MX.Verdict.Message, "Reverse (PTR) records are missing") || !strings.Contains(res.MX.Verdict.Message, "1 MX host resolves") {
 		t.Fatalf("mx: %+v", res.MX.Verdict)
 	}
 	if res.DNSBL.Verdict.Status != Fail || !res.DNSBL.Checks[0].Listed || res.DNSBL.Checks[0].Response != "127.0.0.2" {
@@ -252,5 +253,52 @@ func TestMXLookupFailureIsNotUnresolvable(t *testing.T) {
 	}
 	if res.MX.Verdict.Status != Warn || !strings.Contains(res.MX.Verdict.Message, "could not be looked up") {
 		t.Fatalf("mx: %+v", res.MX.Verdict)
+	}
+}
+
+func TestDeclinationsAndMailLessDomains(t *testing.T) {
+	op, _ := newOp(t)
+	addr := testdns.UDP(t, testdns.Zone(t,
+		// A domain that neither sends nor receives mail, locked down the
+		// way example.com is: null MX, -all, DMARC reject, wildcard revoked DKIM.
+		"nomail.test. 300 IN MX 0 .",
+		"nomail.test. 300 IN TXT \"v=spf1 -all\"",
+		"_dmarc.nomail.test. 300 IN TXT \"v=DMARC1; p=reject\"",
+		"a._domainkey.nomail.test. 300 IN TXT \"v=DKIM1; p=\"",
+		"b._domainkey.nomail.test. 300 IN TXT \"v=DKIM1; p=\"",
+		"default._bimi.nomail.test. 300 IN TXT \"v=BIMI1; l=; a=;\"",
+		// Google-style SPF that ends through a redirect.
+		"redir.test. 300 IN TXT \"v=spf1 redirect=_spf.redir.test\"",
+		"_spf.redir.test. 300 IN TXT \"v=spf1 ip4:192.0.2.0/24 ~all\"",
+	))
+	ep := contract.Endpoint{Transport: "udp", Address: addr}
+	res, err := op.Run(context.Background(), Params{Domain: "nomail.test", Endpoint: ep, DKIMSelectors: []string{"a", "b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.DKIM.Wildcard || res.DKIM.Verdict.Status != OK {
+		t.Errorf("dkim: %+v", res.DKIM.Verdict)
+	}
+	if res.BIMI.Verdict.Status != Info || !strings.Contains(res.BIMI.Verdict.Message, "declined") {
+		t.Errorf("bimi: %+v", res.BIMI.Verdict)
+	}
+	if !strings.Contains(res.SPF.Verdict.Message, "no server may send") {
+		t.Errorf("spf: %+v", res.SPF.Verdict)
+	}
+	if res.DMARC.Verdict.Status == Warn {
+		t.Errorf("dmarc on a mail-less domain: %+v", res.DMARC.Verdict)
+	}
+	if res.Overall.Status != OK || !strings.Contains(res.Overall.Message, "null MX") {
+		t.Errorf("overall: %+v", res.Overall)
+	}
+	res, err = op.Run(context.Background(), Params{Domain: "redir.test", Endpoint: ep, DKIMSelectors: []string{"x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.SPF.Verdict.Message, "hands the rest to _spf.redir.test") {
+		t.Errorf("redirect spf: %+v", res.SPF.Verdict)
+	}
+	if res.DKIM.Verdict.Status != Info {
+		t.Errorf("no dkim found should be info: %+v", res.DKIM.Verdict)
 	}
 }

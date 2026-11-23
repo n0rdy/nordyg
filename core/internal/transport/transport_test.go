@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -84,6 +85,28 @@ func TestUDPAndTCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertAnswer(t, res, "tcp")
+}
+
+func TestOversizedUDPAnswerIsRead(t *testing.T) {
+	// A resolver that ignores the advertised EDNS size (1232) and sends a
+	// ~3 KB datagram anyway, as some VPN and router resolvers do.
+	big := func(q *dns.Msg) *dns.Msg {
+		m := new(dns.Msg)
+		m.SetReply(q)
+		for i := 0; i < 12; i++ {
+			rr, _ := dns.NewRR(fmt.Sprintf("example.test. 300 IN TXT \"%s\"", strings.Repeat(string(rune('a'+i)), 240)))
+			m.Answer = append(m.Answer, rr)
+		}
+		return m
+	}
+	udp := testdns.UDP(t, big)
+	res, err := (&Client{}).Exchange(context.Background(), contract.Endpoint{Transport: "udp", Address: udp}, query("example.test", dns.TypeTXT), opts(2000), nil)
+	if err != nil {
+		t.Fatalf("oversized datagram: %v", err)
+	}
+	if len(res.Msg.Answer) != 12 || res.Size <= 1232 || res.Exchange.Protocol != "udp" {
+		t.Fatalf("answers %d, size %d, protocol %s", len(res.Msg.Answer), res.Size, res.Exchange.Protocol)
+	}
 }
 
 func TestTruncationFallsBackToTCP(t *testing.T) {

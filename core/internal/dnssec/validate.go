@@ -118,9 +118,9 @@ func (w *walker) root(ctx context.Context) error {
 		return nil
 	}
 	set := findSet(rrsets(m.Answer), ".", dns.TypeDNSKEY)
-	sigs, ok := verifySet(set, anchored, ".", w.now)
+	sigs, sig := verifySetSig(set, anchored, ".", w.now)
 	link.Signatures = sigs
-	if !ok {
+	if sig == nil {
 		link.Reason = "root DNSKEY RRset is not signed by the trust anchor key"
 		w.res.Chain = append(w.res.Chain, link)
 		w.fail(Bogus, link.Reason)
@@ -128,7 +128,15 @@ func (w *walker) root(ctx context.Context) error {
 	}
 	link.Status = Secure
 	w.res.Chain = append(w.res.Chain, link)
+	// Report the anchored key that actually signed. During a rollover both
+	// KSKs match an anchor while only one signs (KSK-2024 from 2026-10-11).
 	a := anchored[0]
+	for _, k := range anchored {
+		if k.KeyTag() == sig.KeyTag && k.Algorithm == sig.Algorithm {
+			a = k
+			break
+		}
+	}
 	w.res.TrustAnchor = &KeyRef{KeyTag: a.KeyTag(), Algorithm: a.Algorithm, AlgorithmName: algName(a.Algorithm), Role: role(a.Flags), TrustAnchor: true}
 	w.zone, w.keys = ".", keys
 	return nil
@@ -199,7 +207,7 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 		link.DNSKeys = keyRefs(keys, nil)
 		if !supported {
 			link.Status = Insecure
-			link.Reason = "DS records use only unsupported algorithms; treated as unsigned (RFC 4035 §5.2)"
+			link.Reason = "DS records use only unsupported algorithms, so the zone counts as unsigned (RFC 4035 §5.2)"
 			w.res.Chain = append(w.res.Chain, link)
 			w.fail(Insecure, link.Reason)
 			return nil

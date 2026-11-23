@@ -94,7 +94,7 @@ func wildcardProof(m *dns.Msg, name, wild string, keys []*dns.DNSKEY, zone strin
 	if len(nsec3s) > 0 {
 		for _, n := range nsec3s {
 			if n.Iterations > 150 {
-				return Indeterminate, "NSEC3 iterations " + itoa(int(n.Iterations)) + " exceed the limit; cannot check the wildcard expansion for " + prose(name) + " (RFC 9276)", sigs
+				return Indeterminate, "NSEC3 iterations " + itoa(int(n.Iterations)) + " exceed the limit (RFC 9276), so the wildcard expansion for " + prose(name) + " cannot be checked", sigs
 			}
 		}
 		// The closest encloser is implied by the RRSIG labels; only the next
@@ -134,6 +134,14 @@ func nsecProof(p proof, nsecs []*dns.NSEC, name string, qtype uint16) proof {
 	}
 	if covering == nil {
 		p.reason = "no NSEC matches or covers " + name
+		return p
+	}
+	// An empty non-terminal (a name with no records but with names below it,
+	// like 1.1.in-addr.arpa above a delegated 1.1.1.in-addr.arpa) has no NSEC
+	// of its own: the NSEC that covers it points at a name under it. The name
+	// exists and has no data (RFC 4035 §3.1.3.2, RFC 4592 §2.2.2).
+	if next := strings.ToLower(covering.NextDomain); dns.IsSubDomain(name, next) && !strings.EqualFold(next, name) {
+		p.kind = proofNoData
 		return p
 	}
 	ce := closestEncloser(name, covering)
@@ -227,7 +235,7 @@ func hasType(bitmap []uint16, t uint16) bool {
 func nsec3Proof(p proof, nsec3s []*dns.NSEC3, name string, qtype uint16) proof {
 	for _, n := range nsec3s {
 		if n.Iterations > 150 {
-			p.reason = "NSEC3 iterations " + itoa(int(n.Iterations)) + " exceed the limit; treating as unusable (RFC 9276)"
+			p.reason = "NSEC3 iterations " + itoa(int(n.Iterations)) + " exceed the limit, so the proof is unusable (RFC 9276)"
 			return p
 		}
 	}

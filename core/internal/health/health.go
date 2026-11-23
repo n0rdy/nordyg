@@ -285,7 +285,7 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 		d.add(Fail, "no referral to %s was seen on the way down from the root", prose(apex))
 	}
 	if apex != domain && exists {
-		d.add(Info, "%s is not a zone apex; checking the zone %s that contains it", prose(domain), prose(apex))
+		d.add(Info, "%s is not a zone apex, so the zone %s that contains it was checked", prose(domain), prose(apex))
 	}
 	if ref == nil || !exists {
 		wg.Wait()
@@ -433,8 +433,15 @@ func (r *Result) finish() {
 		}
 	}
 	switch {
+	case r.Delegation.Verdict.Status == Fail && strings.HasPrefix(r.Nameservers.Verdict.Message, "not checked"):
+		// Nothing past the delegation could be checked, so its reason is the story.
+		r.Overall = r.Delegation.Verdict
 	case fails > 0:
-		r.Overall = Finding{Fail, fmt.Sprintf("%d check%s failing, %d warning%s", fails, plural(fails), warns, plural(warns))}
+		msg := fmt.Sprintf("%d check%s failing", fails, plural(fails))
+		if warns > 0 {
+			msg += fmt.Sprintf(", %d warning%s", warns, plural(warns))
+		}
+		r.Overall = Finding{Fail, msg}
 	case warns > 0:
 		r.Overall = Finding{Warn, fmt.Sprintf("no failures, %d warning%s", warns, plural(warns))}
 	default:

@@ -97,7 +97,9 @@ type DKIMSelector struct {
 
 type DKIMSection struct {
 	Selectors []DKIMSelector `json:"selectors"`
-	Verdict   Verdict        `json:"verdict"`
+	// Wildcard: every selector tried returned the same revoked key.
+	Wildcard bool    `json:"wildcard"`
+	Verdict  Verdict `json:"verdict"`
 }
 
 type DMARCSection struct {
@@ -252,8 +254,31 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	// A domain that accepts no mail and sends none has nothing to report on.
+	if res.MX.NullMX && res.DMARC.Verdict.Status == Warn && strings.Contains(res.DMARC.Verdict.Message, "no rua") {
+		res.DMARC.Verdict = Verdict{Info, "p=reject without reporting, which is fine for a domain that sends no mail"}
+	}
+	if res.MX.NullMX && res.DKIM.Wildcard {
+		res.DKIM.Verdict = Verdict{OK, "signs no mail: every selector returns a revoked key, as a domain that sends none should"}
+	}
 	res.Overall = overall(res)
 	return res, nil
+}
+
+// humanSeconds renders a policy lifetime: "1 week", "2 days", "3600 s".
+func humanSeconds(s int) string {
+	switch {
+	case s >= 7*86400 && s%(7*86400) == 0:
+		n := s / (7 * 86400)
+		return fmt.Sprintf("%d week%s", n, plural(n))
+	case s >= 86400 && s%86400 == 0:
+		n := s / 86400
+		return fmt.Sprintf("%d day%s", n, plural(n))
+	case s >= 3600 && s%3600 == 0:
+		n := s / 3600
+		return fmt.Sprintf("%d hour%s", n, plural(n))
+	}
+	return fmt.Sprintf("%d s", s)
 }
 
 func overall(r *Result) Verdict {
@@ -267,10 +292,15 @@ func overall(r *Result) Verdict {
 		}
 	}
 	switch {
-	case fails > 0:
+	case fails > 0 && warns > 0:
 		return Verdict{Fail, fmt.Sprintf("%d check%s failing, %d warning%s", fails, plural(fails), warns, plural(warns))}
+	case fails > 0:
+		return Verdict{Fail, fmt.Sprintf("%d check%s failing", fails, plural(fails))}
 	case warns > 0:
 		return Verdict{Warn, fmt.Sprintf("no failures, %d warning%s", warns, plural(warns))}
+	}
+	if r.MX.NullMX {
+		return Verdict{OK, "accepts no mail (null MX) and the sending side is locked down"}
 	}
 	return Verdict{OK, "mail authentication looks complete"}
 }
@@ -374,13 +404,13 @@ func checkMX(ctx context.Context, r *resolver, domain string) MXSection {
 		sec.Implicit = true
 		addrs, _ := r.addrs(ctx, domain)
 		if len(addrs) == 0 {
-			sec.Verdict = Verdict{Fail, "no MX records and no address records; the domain cannot receive mail"}
+			sec.Verdict = Verdict{Fail, "no MX records and no address records, so the domain cannot receive mail"}
 			return sec
 		}
 		host := MXHost{Preference: 0, Exchange: domain, Addresses: addrs}
 		host.PTR = ptrChecks(ctx, r, addrs, domain)
 		sec.Hosts = append(sec.Hosts, host)
-		sec.Verdict = Verdict{Warn, "no MX records; mail falls back to the domain's own address (implicit MX). Publish MX records explicitly."}
+		sec.Verdict = Verdict{Warn, "no MX records, so mail falls back to the domain's own address (implicit MX). Publish MX records explicitly."}
 		return sec
 	}
 
@@ -430,11 +460,17 @@ func checkMX(ctx context.Context, r *resolver, domain string) MXSection {
 	case broken > 0:
 		sec.Verdict = Verdict{Warn, fmt.Sprintf("%d of %d MX hosts do not resolve", broken, len(hosts))}
 	case unchecked == len(hosts):
-		sec.Verdict = Verdict{Warn, "the MX hosts could not be looked up through this resolver; run the check again"}
+		sec.Verdict = Verdict{Warn, "the MX hosts could not be looked up through this resolver. Run the check again"}
 	case unchecked > 0:
-		sec.Verdict = Verdict{Warn, fmt.Sprintf("%d of %d MX hosts could not be looked up through this resolver; run the check again", unchecked, len(hosts))}
+		sec.Verdict = Verdict{Warn, fmt.Sprintf("%d of %d MX hosts could not be looked up through this resolver. Run the check again", unchecked, len(hosts))}
 	case ptrMiss > 0:
-		sec.Verdict = Verdict{Warn, fmt.Sprintf("%d MX address%s without a matching reverse (PTR) record; some receivers score this against the sender", ptrMiss, pluralEs(ptrMiss))}
+		// Receivers check the reverse record of the server that connects to
+		// them, the sender; MX hosts receive. It matters only if they also send.
+		verb := "resolve"
+		if len(hosts) == 1 {
+			verb = "resolves"
+		}
+		sec.Verdict = Verdict{Info, fmt.Sprintf("%d MX host%s %s. Reverse (PTR) records are missing for %d address%s, which matters only if these servers also send mail", len(hosts), plural(len(hosts)), verb, ptrMiss, pluralEs(ptrMiss))}
 	default:
 		sec.Verdict = Verdict{OK, fmt.Sprintf("%d MX host%s, all resolve with matching reverse records", len(hosts), plural(len(hosts)))}
 	}
@@ -503,7 +539,7 @@ func checkSPF(ctx context.Context, r *resolver, domain string) SPFSection {
 		}
 	}
 	if len(sec.Records) == 0 {
-		sec.Verdict = Verdict{Fail, "no SPF record; receivers cannot tell which servers may send mail for the domain"}
+		sec.Verdict = Verdict{Fail, "no SPF record, so receivers cannot tell which servers may send mail for the domain"}
 		return sec
 	}
 	sec.Decoded = txtdecode.DecodeSPF(sec.Records[0])
@@ -511,7 +547,7 @@ func checkSPF(ctx context.Context, r *resolver, domain string) SPFSection {
 	sec.TotalLookups = sec.Decoded.LookupCount + followIncludes(ctx, r, sec.Decoded, domain, 1, visited, &sec.Includes)
 
 	if len(sec.Records) > 1 {
-		sec.Verdict = Verdict{Fail, fmt.Sprintf("%d SPF records; receivers treat multiple records as a permanent error (RFC 7208 §3.2)", len(sec.Records))}
+		sec.Verdict = Verdict{Fail, fmt.Sprintf("%d SPF records, which receivers treat as a permanent error (RFC 7208 §3.2)", len(sec.Records))}
 		return sec
 	}
 	for _, p := range sec.Decoded.Problems {
@@ -528,11 +564,15 @@ func checkSPF(ctx context.Context, r *resolver, domain string) SPFSection {
 	}
 	switch {
 	case sec.TotalLookups > 10:
-		sec.Verdict = Verdict{Fail, fmt.Sprintf("%d DNS lookups across the include chain, over the limit of 10; receivers return permerror", sec.TotalLookups)}
+		sec.Verdict = Verdict{Fail, fmt.Sprintf("%d DNS lookups across the include chain, over the limit of 10, so receivers return permerror", sec.TotalLookups)}
 	case sec.TotalLookups > 8:
-		sec.Verdict = Verdict{Warn, fmt.Sprintf("%d of 10 allowed DNS lookups used across the include chain; one more sender may break SPF", sec.TotalLookups)}
+		sec.Verdict = Verdict{Warn, fmt.Sprintf("%d of 10 allowed DNS lookups used across the include chain, so one more sender may break SPF", sec.TotalLookups)}
 	case lastAll(sec.Decoded) == "?" || (lastAll(sec.Decoded) == "" && sec.Decoded.Modifiers.Redirect == nil):
 		sec.Verdict = Verdict{Warn, "record ends without -all or ~all, so unauthorised senders get a neutral result"}
+	case len(sec.Decoded.Mechanisms) == 1 && lastAll(sec.Decoded) == "-":
+		sec.Verdict = Verdict{OK, "no server may send mail for the domain (v=spf1 -all)"}
+	case lastAll(sec.Decoded) == "" && sec.Decoded.Modifiers.Redirect != nil:
+		sec.Verdict = Verdict{OK, fmt.Sprintf("valid, %d of 10 lookups used, hands the rest to %s (redirect)", sec.TotalLookups, prose(*sec.Decoded.Modifiers.Redirect))}
 	default:
 		sec.Verdict = Verdict{OK, fmt.Sprintf("valid, %d of 10 lookups used, ends with %sall", sec.TotalLookups, lastAll(sec.Decoded))}
 	}
@@ -651,7 +691,14 @@ func checkDKIM(ctx context.Context, r *resolver, domain string, selectors []stri
 	}
 	switch {
 	case found == 0:
-		sec.Verdict = Verdict{Warn, fmt.Sprintf("no DKIM key at %d common selectors; if the domain sends mail, enter the selector your provider uses", len(selectors))}
+		// Not finding a key proves little: many providers use dated or random
+		// selectors (Google: 20230601) that no list can guess.
+		sec.Verdict = Verdict{Info, fmt.Sprintf("no key at the %d common selectors. Many providers use dated or random selectors, so enter yours to check", len(selectors))}
+	case found == revoked && found == len(selectors):
+		// Every guess answers with the same revoked key: a wildcard, the way a
+		// domain says it signs no mail. Run judges it against the MX section.
+		sec.Wildcard = true
+		sec.Verdict = Verdict{Fail, "every selector returns a revoked key (a wildcard), so mail from this domain carries no valid signature"}
 	case found == revoked:
 		sec.Verdict = Verdict{Fail, "the only DKIM keys found are revoked (empty p=)"}
 	case weak > 0:
@@ -677,12 +724,12 @@ func checkDMARC(ctx context.Context, r *resolver, domain string) DMARCSection {
 		}
 	}
 	if len(sec.Records) == 0 {
-		sec.Verdict = Verdict{Fail, "no DMARC record; SPF and DKIM results are not enforced and no reports are sent"}
+		sec.Verdict = Verdict{Fail, "no DMARC record, so SPF and DKIM results are not enforced and no reports are sent"}
 		return sec
 	}
 	sec.Decoded = txtdecode.DecodeDMARC(sec.Records[0])
 	if len(sec.Records) > 1 {
-		sec.Verdict = Verdict{Fail, "multiple DMARC records; receivers ignore all of them"}
+		sec.Verdict = Verdict{Fail, "multiple DMARC records, and receivers ignore all of them"}
 		return sec
 	}
 	for _, p := range sec.Decoded.Problems {
@@ -697,7 +744,7 @@ func checkDMARC(ctx context.Context, r *resolver, domain string) DMARCSection {
 	}
 	switch policy {
 	case "none":
-		sec.Verdict = Verdict{Warn, "p=none only monitors; spoofed mail is still delivered. Move to quarantine or reject once reports look clean."}
+		sec.Verdict = Verdict{Warn, "p=none only monitors, so spoofed mail is still delivered. Move to quarantine or reject once reports look clean."}
 	case "quarantine":
 		if sec.Decoded.Tags.Pct < 100 {
 			sec.Verdict = Verdict{Warn, fmt.Sprintf("p=quarantine applied to %d%% of failing mail", sec.Decoded.Tags.Pct)}
@@ -708,7 +755,7 @@ func checkDMARC(ctx context.Context, r *resolver, domain string) DMARCSection {
 		if sec.Decoded.Tags.Pct < 100 {
 			sec.Verdict = Verdict{Warn, fmt.Sprintf("p=reject applied to %d%% of failing mail", sec.Decoded.Tags.Pct)}
 		} else if len(sec.Decoded.Tags.RUA) == 0 {
-			sec.Verdict = Verdict{Warn, "p=reject but no rua address; you will not see what is being rejected"}
+			sec.Verdict = Verdict{Warn, "p=reject but no rua address, so you will not see what is being rejected"}
 		} else {
 			sec.Verdict = Verdict{OK, "p=reject with aggregate reporting"}
 		}
@@ -734,7 +781,7 @@ func (op *Op) checkMTASTS(ctx context.Context, r *resolver, domain string) MTAST
 		}
 	}
 	if sec.Record == "" {
-		sec.Verdict = Verdict{Info, "not configured; MTA-STS is optional and tells senders to require TLS to your MX hosts"}
+		sec.Verdict = Verdict{Info, "not configured. MTA-STS is optional and tells senders to require TLS to your MX hosts"}
 		return sec
 	}
 	for _, part := range strings.Split(sec.Record, ";") {
@@ -767,7 +814,7 @@ func (op *Op) checkMTASTS(ctx context.Context, r *resolver, domain string) MTAST
 	case sec.Policy.Version != "STSv1":
 		sec.Verdict = Verdict{Fail, "policy file has no version: STSv1 line"}
 	case sec.Policy.Mode == "enforce":
-		sec.Verdict = Verdict{OK, fmt.Sprintf("enforce mode, %d MX pattern%s, max_age %d s", len(sec.Policy.MX), plural(len(sec.Policy.MX)), sec.Policy.MaxAge)}
+		sec.Verdict = Verdict{OK, fmt.Sprintf("enforce mode, %d MX pattern%s, cached by senders for %s", len(sec.Policy.MX), plural(len(sec.Policy.MX)), humanSeconds(sec.Policy.MaxAge))}
 	case sec.Policy.Mode == "testing":
 		sec.Verdict = Verdict{Warn, "testing mode: senders report failures but still deliver over plain text"}
 	case sec.Policy.Mode == "none":
@@ -816,7 +863,7 @@ func checkBIMI(ctx context.Context, r *resolver, domain string) BIMISection {
 		}
 	}
 	if sec.Record == "" {
-		sec.Verdict = Verdict{Info, "not configured; BIMI shows your logo in supporting inboxes and needs DMARC at quarantine or reject"}
+		sec.Verdict = Verdict{Info, "not configured. BIMI shows your logo in supporting inboxes and needs DMARC at quarantine or reject"}
 		return sec
 	}
 	for _, part := range strings.Split(sec.Record, ";") {
@@ -829,12 +876,15 @@ func checkBIMI(ctx context.Context, r *resolver, domain string) BIMISection {
 		}
 	}
 	switch {
+	case sec.Logo == "" && sec.Evidence == "":
+		// "v=BIMI1; l=; a=;" is the BIMI spec's declination record.
+		sec.Verdict = Verdict{Info, "declined: the record says this domain shows no logo (empty l= and a=)"}
 	case sec.Logo == "":
 		sec.Verdict = Verdict{Fail, "BIMI record without a logo URL (l=)"}
 	case !strings.HasPrefix(sec.Logo, "https://"):
 		sec.Verdict = Verdict{Fail, "BIMI logo URL must be https"}
 	case sec.Evidence == "":
-		sec.Verdict = Verdict{OK, "logo published; no VMC/CMC certificate (a=), so Gmail and Apple Mail will not show it"}
+		sec.Verdict = Verdict{OK, "logo published without a VMC/CMC certificate (a=), so Gmail and Apple Mail will not show it"}
 	default:
 		sec.Verdict = Verdict{OK, "logo and evidence certificate published"}
 	}
@@ -907,11 +957,11 @@ func checkDNSBL(ctx context.Context, r *resolver, mx MXSection, zones []string) 
 	}
 	switch {
 	case listed > 0:
-		sec.Verdict = Verdict{Fail, fmt.Sprintf("%d listing%s on blocklists; receivers using them will refuse mail from these MX hosts", listed, plural(listed))}
+		sec.Verdict = Verdict{Fail, fmt.Sprintf("%d listing%s on blocklists, so receivers using them will refuse mail from these MX hosts", listed, plural(listed))}
 	case blocked == len(sec.Checks):
-		sec.Verdict = Verdict{Info, "the blocklists refuse queries from this resolver (public resolvers are blocked); use your ISP or system resolver to check"}
+		sec.Verdict = Verdict{Info, "the blocklists refuse queries from this resolver (public resolvers are blocked). Use your ISP or system resolver to check"}
 	case blocked > 0:
-		sec.Verdict = Verdict{OK, fmt.Sprintf("not listed where the lists answered; %d list%s refused this resolver", blocked, plural(blocked))}
+		sec.Verdict = Verdict{OK, fmt.Sprintf("not listed where the lists answered, and %d list%s refused this resolver", blocked, plural(blocked))}
 	default:
 		sec.Verdict = Verdict{OK, fmt.Sprintf("%d address%s clean on %d blocklists", len(ips), pluralEs(len(ips)), len(zones))}
 	}

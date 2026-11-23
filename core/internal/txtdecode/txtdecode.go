@@ -134,7 +134,7 @@ func Decorate(m *contract.Message) {
 	for _, sec := range sections {
 		for i := range sec {
 			if s, ok := sec[i].Decoded.(*SPF); ok && spfCount[strings.ToLower(sec[i].Name)] > 1 {
-				s.Problems = append(s.Problems, Problem{SevError, "multiple SPF records for this name; receivers treat that as a permanent error (RFC 7208 §3.2)"})
+				s.Problems = append(s.Problems, Problem{SevError, "multiple SPF records for this name, which receivers treat as a permanent error (RFC 7208 §3.2)"})
 			}
 		}
 	}
@@ -198,12 +198,12 @@ func DecodeSPF(txt string) *SPF {
 		case "all":
 			sawAll = true
 			if q == "+" {
-				out.Problems = append(out.Problems, Problem{SevError, "+all allows any sender; the record provides no protection"})
+				out.Problems = append(out.Problems, Problem{SevError, "+all allows any sender, so the record provides no protection"})
 			}
 		}
 	}
 	if !sawAll && out.Modifiers.Redirect == nil {
-		out.Problems = append(out.Problems, Problem{SevWarning, "no \"all\" mechanism; unmatched senders get neutral"})
+		out.Problems = append(out.Problems, Problem{SevWarning, "no \"all\" mechanism, so unmatched senders get a neutral result"})
 	}
 	switch {
 	case out.LookupCount > 10:
@@ -286,10 +286,10 @@ func DecodeDMARC(txt string) *DMARC {
 	if out.Tags.P == nil {
 		out.Problems = append(out.Problems, Problem{SevError, "p tag is required"})
 	} else if *out.Tags.P == "none" {
-		out.Problems = append(out.Problems, Problem{SevInfo, "p=none only monitors; failing mail is still delivered"})
+		out.Problems = append(out.Problems, Problem{SevInfo, "p=none only monitors, so failing mail is still delivered"})
 	}
 	if len(out.Tags.RUA) == 0 {
-		out.Problems = append(out.Problems, Problem{SevWarning, "no rua address; aggregate reports are not collected"})
+		out.Problems = append(out.Problems, Problem{SevWarning, "no rua address, so aggregate reports are not collected"})
 	}
 	return out
 }
@@ -320,7 +320,7 @@ func DecodeDKIM(txt string) *DKIM {
 			for _, flag := range splitList(v) {
 				switch strings.ToLower(flag) {
 				case "y":
-					out.Problems = append(out.Problems, Problem{SevInfo, "t=y marks the domain as testing; verifiers treat failures leniently"})
+					out.Problems = append(out.Problems, Problem{SevInfo, "t=y marks the domain as testing, so verifiers treat failures leniently"})
 				case "s":
 				default:
 					out.Problems = append(out.Problems, Problem{SevWarning, "unknown t flag " + flag})
@@ -366,9 +366,9 @@ func DecodeDKIM(txt string) *DKIM {
 		out.KeyBits = bitsN
 		switch {
 		case bitsN < 1024:
-			out.Problems = append(out.Problems, Problem{SevError, "RSA key is " + strconv.Itoa(bitsN) + " bits; verifiers reject keys under 1024 (RFC 8301)"})
+			out.Problems = append(out.Problems, Problem{SevError, "RSA key is " + strconv.Itoa(bitsN) + " bits, and verifiers reject keys under 1024 (RFC 8301)"})
 		case bitsN < 2048:
-			out.Problems = append(out.Problems, Problem{SevWarning, "RSA key is " + strconv.Itoa(bitsN) + " bits; 2048 is recommended"})
+			out.Problems = append(out.Problems, Problem{SevWarning, "RSA key is " + strconv.Itoa(bitsN) + " bits, but 2048 is recommended"})
 		}
 	case "ed25519":
 		if len(raw) != ed25519.PublicKeySize {

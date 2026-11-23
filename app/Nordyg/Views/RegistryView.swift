@@ -11,21 +11,19 @@ struct RegistryView: View {
                      help: result.source == "rdap" ? "Registration Data Access Protocol (RFC 9083), the JSON successor to WHOIS, mandatory for generic TLDs since January 2025." : "Classic WHOIS over port 43 (RFC 3912). This TLD publishes no RDAP server, so the text was parsed instead.")
                 if result.found {
                     if let d = result.expiresInDays {
-                        Pill(text: expiryLabel(d), icon: "calendar", color: d < 0 ? .red : d < 30 ? .orange : .green, mono: true, help: "Days until the registration expires, from the \\(result.source.uppercased()) expiration date. Most registrars auto-renew before this date.")
+                        Pill(text: RegistryDates.expiryLabel(d), icon: "calendar", color: d < 0 ? .red : d < 30 ? .orange : .green, mono: true, help: "Time until the registration expires, from the \(result.source.uppercased()) expiration date. Most registrars renew automatically before then.")
                     }
                     if result.dnssec.known {
                         Pill(text: result.dnssec.signed ? "DS at registry" : "no DS at registry", icon: result.dnssec.signed ? "lock.fill" : "lock.open", color: result.dnssec.signed ? .green : .secondary,
                              help: "Whether the registry holds DS records for this delegation, which is what makes the zone's DNSSEC signatures count. The Query and Trace modes validate the actual chain.")
                     }
                     if result.nsMismatch {
-                        Pill(text: "NS mismatch", icon: "exclamationmark.triangle.fill", color: .orange, help: "The nameservers on file at the registry differ from the NS records the zone publishes. The registry's list is what the parent zone delegates to; the zone's own list is what resolvers see afterwards. They should agree.")
+                        Pill(text: "NS mismatch", icon: "exclamationmark.triangle.fill", color: .orange, help: "The nameservers on file at the registry differ from the NS records the zone publishes. The registry's list is what the parent zone delegates to. The zone's own list is what resolvers see afterwards. They should agree.")
                     }
                 } else {
                     Pill(text: "not registered", icon: "questionmark.circle", color: .orange, help: "The registry has no record for this name. It may be available, reserved, or under a TLD whose registry only answers for exact registered names.")
                 }
-                Pill(text: result.server, icon: "server.rack", mono: true, help: "The registry server that answered." + (result.registrarServer.map { "\nRegistrar server followed for contacts: \($0)" } ?? ""))
-                Spacer()
-                Text(result.domain).font(.system(.callout, design: .monospaced).weight(.semibold))
+                Pill(text: RegistryDates.host(result.server), icon: "server.rack", mono: true, help: "The registry server that answered: \(result.server)" + (result.registrarServer.map { "\nRegistrar server followed for contacts: \($0)" } ?? ""))
             }
             Divider()
             ScrollView {
@@ -49,17 +47,27 @@ struct RegistryView: View {
                         if !result.contacts.isEmpty { ContactsCard(contacts: result.contacts) }
                         if result.dnssec.known { RegistryDNSSECCard(d: result.dnssec) }
                     } else {
-                        ContentUnavailableView("Not registered", systemImage: "questionmark.circle", description: Text("\(result.domain) has no record at \(result.server)."))
-                            .frame(height: 200)
+                        // Left-aligned like the start panel: a centred box narrower
+                        // than the window broke long names mid-word.
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Not registered", systemImage: "questionmark.circle").font(.title2.weight(.semibold))
+                            Text(verbatim: "The registry has no record of \(result.domain), so the name is probably free to register.")
+                                .foregroundStyle(.secondary)
+                            Text(verbatim: "Asked \(RegistryDates.host(result.server)).").font(.callout).foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     InfoCard("Raw response", icon: "doc.plaintext", startOpen: false) {
                         Text(result.raw).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    if !result.notices.isEmpty {
-                        Text("Notices: " + result.notices.joined(separator: " · ")).font(.caption).foregroundStyle(.tertiary)
-                    }
-                    Text("Registry data source: \(result.bootstrapSource) bootstrap").font(.caption).foregroundStyle(.tertiary)
+                    // Notices are the registry's legal boilerplate titles ("Terms of
+                    // Use", "Disclaimer"); they live in the raw response.
+                    Text(result.bootstrapSource == "embedded"
+                         ? "The registry's RDAP server came from the list built into Nordyg, as IANA's live list could not be fetched."
+                         : "The registry's RDAP server came from IANA's live list.")
+                        .font(.caption).foregroundStyle(.tertiary)
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -67,10 +75,39 @@ struct RegistryView: View {
         }
     }
 
-    func expiryLabel(_ d: Int) -> String {
-        if d < 0 { return "expired \(-d) d ago" }
-        if d < 60 { return "expires in \(d) d" }
-        return "expires in \(Int((Double(d) / 30.4).rounded())) mo"
+}
+
+/// Human time spans and names for the registry view.
+enum RegistryDates {
+    /// "in 8 years", "in 4 months", "in 12 days", "3 days ago".
+    static func span(_ d: Int) -> String {
+        let a = abs(d)
+        let text: String
+        switch a {
+        case 730...: text = "\(a / 365) years"
+        case 365..<730: text = "1 year"
+        case 60..<365: text = "\(Int((Double(a) / 30.4).rounded())) months"
+        case 1: text = "1 day"
+        default: text = "\(a) days"
+        }
+        return d < 0 ? "\(text) ago" : "in \(text)"
+    }
+
+    static func expiryLabel(_ d: Int) -> String { d < 0 ? "expired \(span(d))" : "expires \(span(d))" }
+
+    /// "https://rdap.verisign.com/com/v1/" → "rdap.verisign.com".
+    static func host(_ server: String) -> String { URL(string: server)?.host ?? server }
+
+    /// EPP codes as words, whether RDAP ("client transfer prohibited") or
+    /// WHOIS ("clientTransferProhibited") spelled them.
+    static func words(_ code: String) -> String {
+        guard !code.contains(" ") else { return code.lowercased() }
+        var out = ""
+        for ch in code {
+            if ch.isUppercase, !out.isEmpty { out += " " }
+            out += ch.lowercased()
+        }
+        return out
     }
 }
 
@@ -130,11 +167,12 @@ struct DatesCard: View {
                     Text("Expires").foregroundStyle(.secondary)
                     HStack(spacing: 8) {
                         Text(pretty(result.expires)).font(.system(.body, design: .monospaced))
-                        if let d = result.expiresInDays { Text("(\(d) days)").foregroundStyle(d < 30 ? Color.orange : Color.secondary) }
+                        if let d = result.expiresInDays { Text(verbatim: "(\(RegistryDates.span(d)))").foregroundStyle(d < 30 ? Color.orange : Color.secondary) }
                     }
                 }
                 GridRow { Text("Updated").foregroundStyle(.secondary); Text(pretty(result.updated)).font(.system(.body, design: .monospaced)) }
-                ForEach(result.events.filter { !["registration", "expiration", "last changed"].contains($0.action) }, id: \.self) { e in
+                // The database's own timestamp says nothing about the domain.
+                ForEach(result.events.filter { !["registration", "expiration", "last changed", "last update of rdap database"].contains($0.action.lowercased()) }, id: \.self) { e in
                     GridRow { Text(e.action.capitalizedFirst).foregroundStyle(.secondary); Text(pretty(e.date)).font(.system(.body, design: .monospaced)) }
                 }
             }
@@ -162,7 +200,7 @@ struct StatusCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(status, id: \.code) { s in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Pill(text: s.code, color: color(s.code), mono: true)
+                        Pill(text: RegistryDates.words(s.code), color: color(s.code), mono: true)
                         Text(s.meaning.isEmpty ? "No description available for this code." : s.meaning).font(.callout).foregroundStyle(.secondary)
                     }
                 }
@@ -214,21 +252,68 @@ struct ContactsCard: View {
     var body: some View {
         InfoCard("Contacts", icon: "person.2") {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(contacts.enumerated()), id: \.offset) { _, c in
-                    HStack(alignment: .top, spacing: 10) {
-                        Pill(text: c.roles.joined(separator: ", "), color: .secondary)
-                        VStack(alignment: .leading, spacing: 1) {
-                            if let n = c.name, !n.isEmpty { Text(n).fontWeight(.semibold) }
-                            if let o = c.org, !o.isEmpty { Text(o) }
-                            if let e = c.email, !e.isEmpty { Text(e).font(.system(.callout, design: .monospaced)).textSelection(.enabled) }
-                            if let p = c.phone, !p.isEmpty { Text(p).font(.system(.callout, design: .monospaced)).textSelection(.enabled) }
-                            if let h = c.handle, !h.isEmpty, c.name == nil && c.org == nil { Text("handle \(h)").foregroundStyle(.secondary) }
+                let shown = contacts.filter { !Self.isRedacted($0) }
+                let hidden = contacts.filter { Self.isRedacted($0) }
+                if !hidden.isEmpty {
+                    // One line instead of REDACTED repeated per field and role.
+                    let privacy = hidden.compactMap(\.org).first { !$0.uppercased().contains("REDACTED") }
+                    Text(verbatim: "\(Array(Set(hidden.flatMap(\.roles))).sorted().joined(separator: ", ")): redacted for privacy" + (privacy.map { " (\($0))" } ?? ""))
+                        .foregroundStyle(.secondary)
+                }
+                // Contacts that are the same entity (a privacy service answers
+                // for every role) merge; roles sit in one column so the details
+                // line up instead of following each capsule's width.
+                Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 10) {
+                    ForEach(Array(Self.merged(shown).enumerated()), id: \.offset) { _, g in
+                        GridRow(alignment: .firstTextBaseline) {
+                            // One role per line: the column is as wide as its
+                            // longest word, not a fixed guess.
+                            Text(g.roles.joined(separator: "\n"))
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                let c = g.contact
+                                if let n = c.name, !n.isEmpty { Text(n).fontWeight(.semibold) }
+                                if let o = c.org, !o.isEmpty, o != c.name { Text(o) }
+                                if let e = c.email, !e.isEmpty {
+                                    if e.hasPrefix("http"), let url = URL(string: e) {
+                                        Link("contact form", destination: url).help(e)
+                                    } else {
+                                        Text(e).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                                    }
+                                }
+                                if let p = c.phone, !p.isEmpty { Text(p).font(.system(.callout, design: .monospaced)).textSelection(.enabled) }
+                                if let h = c.handle, !h.isEmpty, c.name == nil && c.org == nil { Text(verbatim: "handle \(h)").foregroundStyle(.secondary) }
+                            }
                         }
                     }
                 }
-                Text("Most registries redact personal data since 2018; what appears here is what the source publishes.").font(.caption).foregroundStyle(.tertiary)
+                Text("Most registries redact personal data since 2018, so what appears here is only what the source publishes.").font(.caption).foregroundStyle(.tertiary)
             }
         }
+    }
+}
+
+extension ContactsCard {
+    struct Group { var roles: [String]; var contact: RDAPContact }
+
+    /// Contacts with the same name, organisation and phone are one entity
+    /// listed under several roles.
+    static func merged(_ contacts: [RDAPContact]) -> [Group] {
+        var out: [Group] = []
+        for c in contacts {
+            if let i = out.firstIndex(where: { $0.contact.name == c.name && $0.contact.org == c.org && $0.contact.phone == c.phone && (c.name != nil || c.org != nil) }) {
+                out[i].roles.append(contentsOf: c.roles.filter { !out[i].roles.contains($0) })
+            } else {
+                out.append(Group(roles: c.roles, contact: c))
+            }
+        }
+        return out
+    }
+
+    /// A contact whose every published field is a redaction placeholder.
+    static func isRedacted(_ c: RDAPContact) -> Bool {
+        let fields = [c.name, c.email, c.phone].compactMap { $0 }.filter { !$0.isEmpty }
+        return !fields.isEmpty && fields.allSatisfy { $0.uppercased().contains("REDACTED") }
     }
 }
 
@@ -239,7 +324,7 @@ struct RegistryDNSSECCard: View {
             if d.signed {
                 Text(d.ds.isEmpty ? "The registry reports the delegation as signed." : "DS records held by the registry:").font(.callout)
                 ForEach(Array(d.ds.enumerated()), id: \.offset) { _, ds in
-                    Text("tag \(ds.keyTag) · alg \(ds.algorithm) · digest \(ds.digestType) · \(ds.digest)").font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                    Text(verbatim: "tag \(ds.keyTag) · alg \(ds.algorithm) · digest \(ds.digestType) · \(ds.digest)").font(.system(.callout, design: .monospaced)).textSelection(.enabled)
                 }
             } else {
                 Text("No DS record at the registry: the zone is not signed as far as resolvers are concerned, even if it publishes DNSKEYs. Enabling DNSSEC means giving your registrar the DS record.").font(.callout).foregroundStyle(.secondary)

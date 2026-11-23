@@ -478,10 +478,10 @@ func statusMeaning(s string) string {
 }
 
 var statusMeanings = map[string]string{
-	"active":                   "Normal state; the domain is delegated and resolvable.",
-	"ok":                       "Normal state; the domain is delegated and resolvable.",
-	"inactive":                 "No nameservers are associated; the domain does not resolve.",
-	"clienttransferprohibited": "The registrar has locked the domain against transfers. Normal protection; unlock at the registrar before moving it.",
+	"active":                   "Normal state. The domain is delegated and resolvable.",
+	"ok":                       "Normal state. The domain is delegated and resolvable.",
+	"inactive":                 "No nameservers are associated, so the domain does not resolve.",
+	"clienttransferprohibited": "The registrar has locked the domain against transfers. Normal protection. Unlock it at the registrar before moving it.",
 	"servertransferprohibited": "The registry has locked the domain against transfers, usually a dispute or registry lock service.",
 	"clientdeleteprohibited":   "The registrar has locked the domain against deletion. Normal protection.",
 	"serverdeleteprohibited":   "The registry has locked the domain against deletion.",
@@ -492,9 +492,9 @@ var statusMeanings = map[string]string{
 	"clientrenewprohibited":    "The registrar blocks renewal.",
 	"serverrenewprohibited":    "The registry blocks renewal.",
 	"pendingcreate":            "Registration requested, not yet complete.",
-	"pendingdelete":            "Scheduled for deletion and about to drop; cannot be restored by the registrant.",
+	"pendingdelete":            "Scheduled for deletion and about to drop. The registrant can no longer restore it.",
 	"pendingrenew":             "Renewal requested, not yet complete.",
-	"pendingrestore":           "Restore from redemption requested; the registrar must confirm.",
+	"pendingrestore":           "Restore from redemption requested. The registrar must confirm.",
 	"pendingtransfer":          "A transfer to another registrar is in progress.",
 	"pendingupdate":            "An update is in progress.",
 	"redemptionperiod":         "Deleted by the registrar and in the grace period where it can still be restored, for a fee.",

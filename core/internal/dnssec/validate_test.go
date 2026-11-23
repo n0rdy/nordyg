@@ -67,9 +67,15 @@ func newWorld(t *testing.T) *world {
 	w.tld.delegate(w.n3, true)
 	w.n3.delegate(w.n3optoutChild, false)
 	w.n3.delegate(w.n3signedChild, true)
+	// An unsigned delegation below an empty non-terminal (ent.example.test
+	// has no records), the shape of reverse DNS: 1.1.in-addr.arpa above a
+	// delegated 1.1.1.in-addr.arpa.
+	deep := newZone(t, "sub.ent.example.test.", unsigned())
+	deep.add("sub.ent.example.test. 300 IN A 192.0.2.91")
+	w.example.delegate(deep, false)
 	w.root.delegate(w.tld, true)
 
-	for _, z := range []*zone{w.root, w.tld, w.example, other, w.unsigned, w.bogus, w.expiredZ, w.badsig, w.strippedZ, w.rsa, w.n3, w.n3optoutChild, w.n3signedChild} {
+	for _, z := range []*zone{deep, w.root, w.tld, w.example, other, w.unsigned, w.bogus, w.expiredZ, w.badsig, w.strippedZ, w.rsa, w.n3, w.n3optoutChild, w.n3signedChild} {
 		z.sign()
 	}
 	w.fetch = &memFetcher{answer: recursive(w.root), fail: map[string]bool{}}
@@ -441,5 +447,46 @@ func TestKeyTagCollision(t *testing.T) {
 	sigs, ok := verifySet(s, []*dns.DNSKEY{&decoy, z.zsk}, "collide.test.", time.Now())
 	if !ok {
 		t.Fatalf("collision not handled: %+v", sigs)
+	}
+}
+
+func TestUnsignedDelegationBelowEmptyNonTerminal(t *testing.T) {
+	w := newWorld(t)
+	res := w.query(t, "sub.ent.example.test.", dns.TypeA)
+	if res.Status != Insecure || !strings.Contains(res.Reason, "sub.ent.example.test") {
+		t.Fatalf("%s: %s\n%v", res.Status, res.Reason, zones(res))
+	}
+	// The empty non-terminal itself exists with no data, it is not NXDOMAIN.
+	m, _ := w.fetch.Fetch(context.Background(), "ent.example.test.", dns.TypeDS)
+	if p := denial(m, "ent.example.test.", dns.TypeDS, dnskeys(mustFetch(t, w, "example.test.", dns.TypeDNSKEY).Answer, "example.test."), "example.test.", time.Now()); p.kind != proofNoData {
+		t.Fatalf("ENT proof kind %d: %s", p.kind, p.reason)
+	}
+}
+
+func mustFetch(t *testing.T, w *world, name string, qtype uint16) *dns.Msg {
+	t.Helper()
+	m, err := w.fetch.Fetch(context.Background(), name, qtype)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestTrustAnchorIsTheSigningKey(t *testing.T) {
+	// Two root KSKs match an anchor, as during the KSK-2017 → KSK-2024
+	// rollover; only one signs. The reported anchor must be the signer.
+	root := newZone(t, ".")
+	standby := &dns.DNSKEY{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeDNSKEY, Class: dns.ClassINET, Ttl: 300}, Flags: 257, Protocol: 3, Algorithm: dns.ECDSAP256SHA256}
+	if _, err := standby.Generate(256); err != nil {
+		t.Fatal(err)
+	}
+	root.addRR(standby)
+	root.sign()
+	f := &memFetcher{answer: recursive(root), fail: map[string]bool{}}
+	v := &Validator{Anchors: []*dns.DS{standby.ToDS(dns.SHA256), root.ksk.ToDS(dns.SHA256)}}
+	m, _ := f.Fetch(context.Background(), ".", dns.TypeSOA)
+	res, err := v.Validate(context.Background(), f, ".", dns.TypeSOA, m)
+	if err != nil || res.Status != Secure || res.TrustAnchor == nil || res.TrustAnchor.KeyTag != root.ksk.KeyTag() {
+		t.Fatalf("%+v %v (signer %d, standby %d)", res.TrustAnchor, err, root.ksk.KeyTag(), standby.KeyTag())
 	}
 }

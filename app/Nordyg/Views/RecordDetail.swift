@@ -49,7 +49,7 @@ struct RecordDetail: View {
                     }
                 }
                 if let raw = record.raw {
-                    Text("Unknown type; raw rdata").font(.headline)
+                    Text("Unknown type, shown as raw data").font(.headline)
                     Text(raw).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
                 }
                 if let decoded = record.decoded {
@@ -80,8 +80,8 @@ struct DecodedTXTView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Pill(text: (decoded["kind"]?.stringValue ?? "decoded").uppercased(), color: .orange, mono: true)
-                if let bits = decoded["key_bits"] { Text("\(bits.display)-bit \(decoded["key_type"]?.display ?? "")").font(.caption) }
-                if let n = decoded["lookup_count"] { Text("\(n.display)/10 lookups").font(.caption) }
+                if let bits = decoded["key_bits"] { Text(verbatim: "\(bits.display)-bit \(decoded["key_type"]?.display ?? "")").font(.caption) }
+                if let n = decoded["lookup_count"] { Text(verbatim: "\(n.display)/10 lookups").font(.caption) }
             }
             if let problems = decoded["problems"]?.arrayValue, !problems.isEmpty {
                 ForEach(Array(problems.enumerated()), id: \.offset) { _, p in
@@ -96,7 +96,7 @@ struct DecodedTXTView: View {
                 Label("No problems found", systemImage: "checkmark.circle").foregroundStyle(.green).font(.callout)
             }
             if let mechs = decoded["mechanisms"]?.arrayValue {
-                Text(mechs.map { "\($0["qualifier"]?.display ?? "")\($0["kind"]?.display ?? "")\(($0["value"]?.stringValue).map { ":" + $0 } ?? "")" }.joined(separator: "  "))
+                Text(verbatim: mechs.map { "\($0["qualifier"]?.display ?? "")\($0["kind"]?.display ?? "")\(($0["value"]?.stringValue).map { ":" + $0 } ?? "")" }.joined(separator: "  "))
                     .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
             }
             if let tags = decoded["tags"]?.objectValue {

@@ -57,6 +57,38 @@ struct Pill: View {
     }
 }
 
+/// Plain metadata in a status strip: quiet monospaced text, no capsule.
+/// Capsules are kept for verdicts and exceptions, so those stand out.
+struct Meta: View {
+    var text: String
+    var help: String?
+    var body: some View {
+        Text(text)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .help(help ?? "")
+    }
+}
+
+/// Separator between quiet metadata items.
+struct Dot: View {
+    var body: some View { Text("·").foregroundStyle(.tertiary) }
+}
+
+/// The header flags worth saying out loud, in words. QR (it is a response)
+/// and RD (echo of the request) are always set and say nothing; RA is only
+/// news when it is missing; AD is the resolver's own DNSSEC claim, which the
+/// DNSSEC badge already covers with Nordyg's own check.
+enum FlagNotes {
+    static func notes(_ f: Flags) -> [String] {
+        var out: [String] = []
+        if f.aa { out.append("authoritative answer") }
+        if f.tc { out.append("truncated") }
+        if f.rd && !f.ra { out.append("server does not recurse") }
+        return out
+    }
+}
+
 /// A slim row holding the view switcher for a result, kept apart from the
 /// pill strip so neither has to fit the other.
 struct TabRow<Content: View>: View {
@@ -67,6 +99,7 @@ struct TabRow<Content: View>: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+                .tint(.accentColor) // the default grey selection is too faint to spot
             Spacer()
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -219,7 +252,7 @@ enum Glossary {
     static func dnssec(_ s: String) -> String {
         switch s {
         case "secure": return "DNSSEC secure: every link from the root trust anchor down to this answer was verified by Nordyg itself. The data is exactly what the zone owner signed."
-        case "insecure": return "DNSSEC unsigned: this zone has no DS record at its parent, and the parent proved that. Nothing is wrong; the domain simply does not use DNSSEC, like most domains."
+        case "insecure": return "DNSSEC unsigned: this zone has no DS record at its parent, and the parent proved that. Nothing is wrong. The domain simply does not use DNSSEC, like most domains."
         case "bogus": return "DNSSEC bogus: a signature, key or DS record failed verification. Either the zone is misconfigured (expired signatures, key rollover gone wrong) or the answer was tampered with. Validating resolvers refuse such answers."
         default: return "DNSSEC indeterminate: Nordyg could not fetch something it needed (a DNSKEY or DS lookup failed or timed out), so no verdict is possible."
         }
@@ -265,22 +298,22 @@ enum Glossary {
         case "MX": return "MX: mail exchanger for the domain, with a preference (lower is tried first)."
         case "TXT": return "TXT: free text. Carries SPF, DMARC, DKIM and verification tokens."
         case "NS": return "NS: nameserver authoritative for the zone."
-        case "SOA": return "SOA: start of authority; zone serial, refresh timers and the negative-caching TTL."
+        case "SOA": return "SOA: start of authority. Holds the zone serial, refresh timers and the negative-caching TTL."
         case "PTR": return "PTR: reverse mapping from an address back to a name."
         case "SRV": return "SRV: service location with priority, weight, port and target."
         case "CAA": return "CAA: which certificate authorities may issue certificates for the name."
-        case "DS": return "DS: delegation signer; the parent's hash of the child's key-signing key. The link between zones in the DNSSEC chain."
+        case "DS": return "DS: delegation signer, the parent's hash of the child's key-signing key. The link between zones in the DNSSEC chain."
         case "DNSKEY": return "DNSKEY: public key used to sign the zone. KSK signs the key set, ZSK signs the data."
         case "RRSIG": return "RRSIG: DNSSEC signature over a record set, with inception and expiration times."
         case "NSEC": return "NSEC: proves a name or type does not exist, by naming the next name in the zone."
         case "NSEC3": return "NSEC3: hashed version of NSEC, optionally with opt-out for unsigned delegations."
         case "NSEC3PARAM": return "NSEC3PARAM: the hashing parameters a zone uses for NSEC3."
         case "TLSA": return "TLSA: DANE binding of a TLS certificate or key to a service name."
-        case "HTTPS": return "HTTPS: service binding for web endpoints; advertises ALPN (h2, h3), ports, address hints and ECH."
+        case "HTTPS": return "HTTPS: service binding for web endpoints. Advertises ALPN (h2, h3), ports, address hints and ECH."
         case "SVCB": return "SVCB: general service binding, the base of HTTPS records."
         case "NAPTR": return "NAPTR: naming authority pointer, used by ENUM and SIP."
         case "SSHFP": return "SSHFP: fingerprint of an SSH host key."
-        case "ANY": return "ANY: asks for all types. Deprecated (RFC 8482); many servers answer minimally."
+        case "ANY": return "ANY: asks for all types. Deprecated (RFC 8482), so many servers answer minimally."
         default:
             if t.uppercased().hasPrefix("TYPE") { return "\(t): a record type Nordyg has no parser for. The data is shown as raw hex (RFC 3597)." }
             return "Record type \(t)."
@@ -297,16 +330,16 @@ struct CacheAgePill: View {
     var body: some View {
         switch model.cacheAge(of: message, question: question) {
         case .unknown:
-            Button { model.fetchAuthoritative(for: question) } label: {
-                Pill(text: "cache age?", icon: "questionmark.circle", help: Glossary.cacheUnknown)
-            }
-            .buttonStyle(.plain)
+            Button("check cache age") { model.fetchAuthoritative(for: question) }
+                .buttonStyle(.link)
+                .font(.caption)
+                .help(Glossary.cacheUnknown)
         case .checking:
-            Pill(text: "checking…", icon: "hourglass", help: Glossary.cacheChecking)
+            Meta(text: "checking cache age…", help: Glossary.cacheChecking)
         case .fresh:
-            Pill(text: "fresh", icon: "sparkles", color: .green, help: Glossary.cacheFresh)
+            Meta(text: "not cached", help: Glossary.cacheFresh)
         case .cached(let s):
-            Pill(text: "cached \(age(s)) ago", icon: "clock.arrow.circlepath", color: s > 300 ? .orange : .secondary, help: Glossary.cacheAge(s))
+            Meta(text: "in cache for \(age(s))", help: Glossary.cacheAge(s))
         case .differs:
             Pill(text: "differs from authoritative", icon: "exclamationmark.triangle.fill", color: .orange, help: Glossary.cacheDiffers)
         }
@@ -332,16 +365,20 @@ struct SystemViewPill: View {
     var body: some View {
         if let system {
             let overlap = !Set(system).isDisjoint(with: Set(answers))
-            let color: Color = system.isEmpty ? .secondary : (overlap ? .green : .orange)
-            Pill(text: system.isEmpty ? "Mac sees nothing" : (overlap ? "Mac agrees" : "Mac sees different"),
-                 icon: "desktopcomputer", color: color,
-                 help: Glossary.systemView(system, overlap: overlap))
+            if overlap {
+                // Agreement is the normal case: say it quietly.
+                Meta(text: "your Mac sees the same", help: Glossary.systemView(system, overlap: true))
+            } else {
+                Pill(text: system.isEmpty ? "your Mac gets no answer" : "your Mac sees something else",
+                     icon: "desktopcomputer", color: .orange,
+                     help: Glossary.systemView(system, overlap: false))
+            }
         }
     }
 }
 
 extension Glossary {
-    static let cacheUnknown = "Click to find out how old this resolver's copy is. Nordyg fetches the authoritative answer with a trace and compares TTLs; the difference is the time the record has sat in the resolver's cache."
+    static let cacheUnknown = "Click to find out how old this resolver's copy is. Nordyg fetches the authoritative answer with a trace and compares TTLs. The difference is the time the record has sat in the resolver's cache."
     static let cacheChecking = "Tracing to the authoritative server to learn the original TTL…"
     static let cacheFresh = "The TTL matches the authoritative one: the resolver fetched this answer just now, not from its cache."
     static func cacheAge(_ s: Int) -> String { "The resolver returned a TTL \(s) s lower than the authoritative server publishes, so this copy has been in its cache about that long. Changes made since then are not visible through this resolver until the TTL runs out." }
@@ -384,5 +421,17 @@ struct VerdictPill: View {
     var verdict: Verdict
     var body: some View {
         Pill(text: VerdictStyle.label(verdict.status), icon: VerdictStyle.icon(verdict.status), color: VerdictStyle.color(verdict.status), help: verdict.message)
+    }
+}
+
+/// Transport names as people write them: DoT, DoH and DoQ, not DOT.
+enum TransportName {
+    static func display(_ p: String) -> String {
+        switch p.lowercased() {
+        case "dot": return "DoT"
+        case "doh": return "DoH"
+        case "doq": return "DoQ"
+        default: return p.uppercased()
+        }
     }
 }

@@ -11,10 +11,26 @@ struct HistoryItem: Codable, Identifiable, Hashable {
 
     var subtitle: String {
         switch mode {
-        case "compare": return "compare"
+        case "compare": return "several resolvers"
         case "trace": return "trace"
         default: return endpoint?.title ?? ""
         }
+    }
+}
+
+/// Resolvers the user added, saved next to the history.
+enum CustomResolverStore {
+    static var url: URL { HistoryStore.url.deletingLastPathComponent().appendingPathComponent("resolvers.json") }
+
+    static func load() -> [Endpoint] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        return (try? JSONDecoder().decode([Endpoint].self, from: data)) ?? []
+    }
+
+    static func save(_ eps: [Endpoint]) {
+        let e = JSONEncoder()
+        e.outputFormatting = .prettyPrinted
+        if let data = try? e.encode(eps) { try? data.write(to: url, options: .atomic) }
     }
 }
 
