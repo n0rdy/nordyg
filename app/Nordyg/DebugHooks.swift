@@ -66,6 +66,13 @@ enum DebugHooks {
                 let ep = Endpoint(transport: "udp", address: parts[1] + ":53", tlsName: nil, url: nil, method: nil, label: nil)
                 if parts[0] == "add" { model.addCustom(ep) } else { model.removeCustom(ep) }
             }
+        case "preset":
+            // "preset nextdns" opens its sheet; "preset nextdns abc123" sets the value.
+            let parts = arg.split(separator: " ").map(String.init)
+            if parts.count == 2 { model.configurePreset(parts[0], values: ["profile_id": parts[1]]) }
+            else if parts.count == 1 { model.setupPreset = parts[0] }
+            else { model.setupPreset = nil }
+        case "unpreset": model.clearPreset(arg)
         case "checklist": model.showResolverChecklist = arg != "off"
         case "drill": model.compareDetail = Int(arg)
         case "name": model.name = arg

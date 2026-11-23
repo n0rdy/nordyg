@@ -199,15 +199,61 @@ final class AppModel: ObservableObject {
 
     /// Every endpoint the picker offers, in display order.
     var allEndpoints: [Endpoint] {
-        systemEndpoints + presets.flatMap { p in p.endpoints.filter { !$0.needsPlaceholder } } + customEndpoints
+        systemEndpoints + resolvedPresets.flatMap { p in p.endpoints.filter { !$0.needsPlaceholder } } + customEndpoints
     }
 
     /// Presets as one entry per provider, for the compact resolver pickers.
     var providers: [Provider] {
-        presets.compactMap { p in
+        resolvedPresets.compactMap { p in
             let usable = p.endpoints.filter { !$0.needsPlaceholder }
-            return usable.isEmpty ? nil : Provider(name: p.name, all: usable)
+            return usable.isEmpty ? nil : Provider(name: p.name, all: usable, presetID: p.id, requires: p.requires ?? [])
         }
+    }
+
+    /// Values for preset placeholders (NextDNS's profile_id), kept in settings.
+    @Published var presetValues: [String: String] = UserDefaults.standard.dictionary(forKey: "presetValues") as? [String: String] ?? [:] {
+        didSet { UserDefaults.standard.set(presetValues, forKey: "presetValues") }
+    }
+    /// The preset whose setup sheet is open.
+    @Published var setupPreset: String?
+
+    /// Presets with their placeholders filled from `presetValues`.
+    var resolvedPresets: [Preset] {
+        presets.map { p in
+            guard let req = p.requires, !req.isEmpty else { return p }
+            var q = p
+            q.endpoints = p.endpoints.map { ep in
+                var e = ep
+                for k in req {
+                    guard let v = presetValues[k], !v.isEmpty else { continue }
+                    e.url = e.url?.replacingOccurrences(of: "{\(k)}", with: v)
+                    e.tlsName = e.tlsName?.replacingOccurrences(of: "{\(k)}", with: v)
+                }
+                return e
+            }
+            return q
+        }
+    }
+
+    /// Presets that cannot be used until a value is entered.
+    var presetsNeedingSetup: [Preset] {
+        resolvedPresets.filter { !$0.endpoints.isEmpty && $0.endpoints.allSatisfy(\.needsPlaceholder) }
+    }
+
+    /// Saves a preset's values and switches to its first endpoint.
+    func configurePreset(_ id: String, values: [String: String]) {
+        for (k, v) in values { presetValues[k] = v }
+        if let p = resolvedPresets.first(where: { $0.id == id }), let ep = Provider(name: p.name, all: p.endpoints.filter { !$0.needsPlaceholder }).primary.first(where: { $0.transport == "dot" }) ?? p.endpoints.first(where: { !$0.needsPlaceholder }) {
+            selected = ep
+        }
+    }
+
+    func clearPreset(_ id: String) {
+        guard let p = presets.first(where: { $0.id == id }) else { return }
+        let had = allEndpoints
+        for k in p.requires ?? [] { presetValues[k] = nil }
+        if let s = selected, had.contains(s), !allEndpoints.contains(s) { selected = systemEndpoints.first }
+        compareSelection = compareSelection.filter { allEndpoints.contains($0) }
     }
 
     /// Bootstrap resolvers for DoH: the system ones, plain UDP.
@@ -563,6 +609,8 @@ enum CacheAge: Equatable {
 struct Provider: Identifiable {
     var name: String
     var all: [Endpoint]
+    var presetID: String = ""
+    var requires: [String] = []
     var id: String { name }
 
     static let transportOrder = ["udp", "tcp", "dot", "doh", "doq"]

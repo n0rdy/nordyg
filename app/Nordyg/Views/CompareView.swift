@@ -21,14 +21,15 @@ struct CompareView: View {
                      icon: result.consistent ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                      color: result.consistent ? .green : .orange,
                      help: result.consistent ? "Every resolver returned the same set of records. TTL and record order are ignored in the comparison." : "Resolvers returned different data. Common causes: a recent change still propagating, geo-based answers, or a resolver that filters or blocks the name.")
-                Meta(text: "\(result.results.count) resolvers", help: "Resolvers queried concurrently with the same question.")
-                Meta(text: "\(result.groups.filter { $0.key != "error" }.count) distinct answers", help: "Number of different answer sets seen. One means agreement.")
+                Meta(text: plural(result.results.count, "resolver"), help: "Resolvers queried concurrently with the same question.")
+                Dot()
+                Meta(text: plural(result.groups.filter { $0.key != "error" }.count, "distinct answer"), help: "Number of different answer sets seen. One means agreement.")
                 if let failed = result.groups.first(where: { $0.key == "error" }) {
                     Pill(text: "\(failed.members.count) failed", icon: "xmark.circle", color: .red, mono: true, help: "Resolvers that did not answer at all: timeout, refused connection or TLS failure. See the row for the reason.")
                 }
                 Spacer()
                 HStack(spacing: 6) {
-                    Text(result.questionSent.name).font(.system(.callout, design: .monospaced))
+                    Text(prose(result.questionSent.name)).font(.system(.callout, design: .monospaced))
                     TypeBadge(type: result.questionSent.type)
                 }
             }

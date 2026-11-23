@@ -136,17 +136,15 @@ struct HistoryRow: View {
                 Image(systemName: icon)
                     .foregroundStyle(.secondary)
                     .frame(width: 16)
-                Text(item.name)
-                    .font(.system(.body, design: .monospaced))
-                    .lineLimit(1).truncationMode(.middle)
-                if let t = recordType {
-                    Text(t).font(.caption.weight(.semibold)).foregroundStyle(TypeStyle.color(t))
-                }
-                if let r = resolverNote {
-                    Text(r).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+                // With the resolver note when it fits whole, without it otherwise:
+                // a note cut to one letter says nothing (the tooltip has it).
+                ViewThatFits(in: .horizontal) {
+                    line(withNote: true)
+                    line(withNote: false)
                 }
                 Spacer(minLength: 4)
                 Text(stamp).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                    .fixedSize() // never truncated: the time is short and always readable
             }
             .contentShape(Rectangle())
         }
@@ -155,6 +153,21 @@ struct HistoryRow: View {
         .contextMenu {
             Button(item.pinned ? "Unpin" : "Pin") { model.togglePin(item) }
             Button("Delete") { model.delete(item) }
+        }
+    }
+
+    private func line(withNote: Bool) -> some View {
+        HStack(spacing: 7) {
+            Text(item.name)
+                .font(.system(.body, design: .monospaced))
+                .lineLimit(1).truncationMode(.middle)
+                .layoutPriority(1)
+            if let t = recordType {
+                Text(t).font(.caption.weight(.semibold)).foregroundStyle(TypeStyle.color(t)).fixedSize()
+            }
+            if withNote, let r = resolverNote {
+                Text(r).font(.caption).foregroundStyle(.tertiary).fixedSize()
+            }
         }
     }
 

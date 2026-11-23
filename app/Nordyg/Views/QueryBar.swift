@@ -84,6 +84,9 @@ struct QueryBar: View {
         }
         .padding(12)
         .sheet(isPresented: $showCustom) { CustomEndpointSheet() }
+        .sheet(item: Binding(get: { model.presets.first { $0.id == model.setupPreset } }, set: { model.setupPreset = $0?.id })) { p in
+            PresetSetupSheet(preset: p)
+        }
         .onAppear { nameFocused = true }
     }
 
@@ -130,6 +133,9 @@ struct EndpointPickerItems: View {
             }
         }
         Section("Public resolvers") {
+            ForEach(model.presetsNeedingSetup) { p in
+                Button("\(p.name)… (needs your \(PresetFields.label((p.requires ?? [""])[0]).lowercased()))") { model.setupPreset = p.id }
+            }
             ForEach(model.providers) { p in
                 Menu {
                     Picker("", selection: $selection) {
@@ -142,6 +148,9 @@ struct EndpointPickerItems: View {
                             ForEach(p.all) { ep in Text(ep.title).tag(Optional(ep)) }
                         }
                         .pickerStyle(.inline).labelsHidden()
+                    }
+                    if !p.requires.isEmpty {
+                        Button("Change \(PresetFields.label(p.requires[0]).lowercased())…") { model.setupPreset = p.presetID }
                     }
                 } label: {
                     if let s = selection, p.all.contains(s) {
@@ -399,5 +408,86 @@ struct ProviderChecklistRow: View {
                 ForEach(provider.all) { ep in EndpointCheckbox(endpoint: ep).padding(.leading, 22).font(.callout) }
             }
         }
+    }
+}
+
+/// Labels and checks for the values presets ask for.
+enum PresetFields {
+    static func label(_ key: String) -> String {
+        switch key {
+        case "profile_id": return "Profile ID"
+        default: return key.replacingOccurrences(of: "_", with: " ").capitalizedFirst
+        }
+    }
+
+    static func help(_ presetID: String, _ key: String) -> String {
+        switch (presetID, key) {
+        case ("nextdns", "profile_id"):
+            return "Find it on my.nextdns.io under Setup: the 6 characters in abc123.dns.nextdns.io. Queries then use your NextDNS configuration, its blocklists and its logs."
+        default:
+            return "The value your provider gave you."
+        }
+    }
+
+    /// Nil when fine, otherwise what is wrong.
+    static func problem(_ key: String, _ value: String) -> String? {
+        let v = value.trimmingCharacters(in: .whitespaces).lowercased()
+        if v.isEmpty { return "Enter a value." }
+        if key == "profile_id", v.range(of: "^[0-9a-f]{6}$", options: .regularExpression) == nil {
+            return "A NextDNS profile ID is 6 characters, digits and a to f, like abc123."
+        }
+        if v.range(of: "^[a-z0-9-]+$", options: .regularExpression) == nil {
+            return "Only letters, digits and dashes."
+        }
+        return nil
+    }
+}
+
+/// Asks for the values a preset needs (NextDNS's profile ID).
+struct PresetSetupSheet: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    var preset: Preset
+    @State private var values: [String: String] = [:]
+    @State private var problem: String?
+
+    var body: some View {
+        let keys = preset.requires ?? []
+        VStack(alignment: .leading, spacing: 12) {
+            Text(preset.name).font(.headline)
+            ForEach(keys, id: \.self) { k in
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField(PresetFields.label(k), text: Binding(get: { values[k] ?? "" }, set: { values[k] = $0 }))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .onSubmit(save)
+                    Text(PresetFields.help(preset.id, k)).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let problem { Text(problem).foregroundStyle(.red).font(.callout) }
+            HStack {
+                if keys.contains(where: { model.presetValues[$0] != nil }) {
+                    Button("Remove", role: .destructive) { model.clearPreset(preset.id); dismiss() }
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save") { save() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+        .onAppear { for k in keys { values[k] = model.presetValues[k] ?? "" } }
+    }
+
+    private func save() {
+        var clean: [String: String] = [:]
+        for k in preset.requires ?? [] {
+            let v = (values[k] ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+            if let p = PresetFields.problem(k, v) { problem = p; return }
+            clean[k] = v
+        }
+        model.configurePreset(preset.id, values: clean)
+        dismiss()
     }
 }
