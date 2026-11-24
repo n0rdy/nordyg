@@ -34,8 +34,7 @@ struct RegistryView: View {
                                 Label(w, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                             }
                         }
-                        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.orange.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 8))
+                        .card(fill: Color.orange.opacity(0.08))
                     }
                     if result.found {
                         HStack(alignment: .top, spacing: 12) {
@@ -48,7 +47,7 @@ struct RegistryView: View {
                         if result.dnssec.known { RegistryDNSSECCard(d: result.dnssec) }
                     } else {
                         // Left-aligned like the start panel: a centred box narrower
-                        // than the window broke long names mid-word.
+                        // than the window breaks long names mid-word.
                         VStack(alignment: .leading, spacing: 8) {
                             Label("Not registered", systemImage: "questionmark.circle").font(.title2.weight(.semibold))
                             Text(verbatim: "The registry has no record of \(result.domain), so the name is probably free to register.")
@@ -74,7 +73,6 @@ struct RegistryView: View {
             }
         }
     }
-
 }
 
 /// Human time spans and names for the registry view.
@@ -134,10 +132,7 @@ struct InfoCard<Content: View>: View {
             }
             if open { content }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .card()
     }
 }
 
@@ -181,12 +176,7 @@ struct DatesCard: View {
 
     func pretty(_ s: String?) -> String {
         guard let s, !s.isEmpty else { return "—" }
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = f.date(from: s) ?? ISO8601DateFormatter().date(from: s) {
-            return d.formatted(date: .long, time: .omitted)
-        }
-        return s
+        return ISODate.parse(s)?.formatted(date: .long, time: .omitted) ?? s
     }
 }
 
@@ -222,25 +212,23 @@ struct NameserversCard: View {
     var body: some View {
         InfoCard("Nameservers", icon: "server.rack") {
             HStack(alignment: .top, spacing: 24) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("At the registry").font(.caption).foregroundStyle(.secondary)
-                    if result.nameservers.isEmpty { Text("none listed").foregroundStyle(.secondary) }
-                    ForEach(result.nameservers, id: \.self) { ns in
-                        HStack(spacing: 6) {
-                            Image(systemName: result.dnsNameservers.isEmpty || result.dnsNameservers.contains(ns) ? "checkmark.circle" : "exclamationmark.circle").foregroundStyle(result.dnsNameservers.isEmpty || result.dnsNameservers.contains(ns) ? Color.green : Color.orange)
-                            Text(ns).font(.system(.callout, design: .monospaced))
-                        }
-                    }
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("In the zone (NS records)").font(.caption).foregroundStyle(.secondary)
-                    if result.dnsNameservers.isEmpty { Text("no answer").foregroundStyle(.secondary) }
-                    ForEach(result.dnsNameservers, id: \.self) { ns in
-                        HStack(spacing: 6) {
-                            Image(systemName: result.nameservers.isEmpty || result.nameservers.contains(ns) ? "checkmark.circle" : "exclamationmark.circle").foregroundStyle(result.nameservers.isEmpty || result.nameservers.contains(ns) ? Color.green : Color.orange)
-                            Text(ns).font(.system(.callout, design: .monospaced))
-                        }
-                    }
+                column("At the registry", empty: "none listed", names: result.nameservers, other: result.dnsNameservers)
+                column("In the zone (NS records)", empty: "no answer", names: result.dnsNameservers, other: result.nameservers)
+            }
+        }
+    }
+
+    /// One side's list. A name is flagged when the other side has a list
+    /// and it is not on it.
+    private func column(_ title: String, empty: String, names: [String], other: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            if names.isEmpty { Text(empty).foregroundStyle(.secondary) }
+            ForEach(names, id: \.self) { ns in
+                let agreed = other.isEmpty || other.contains(ns)
+                HStack(spacing: 6) {
+                    Image(systemName: agreed ? "checkmark.circle" : "exclamationmark.circle").foregroundStyle(agreed ? Color.green : Color.orange)
+                    Text(ns).font(.system(.callout, design: .monospaced))
                 }
             }
         }

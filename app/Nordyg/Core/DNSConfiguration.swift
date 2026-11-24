@@ -185,6 +185,9 @@ final class MacDNSMonitor: ObservableObject {
 
     init() {
         reload(initial: true)
+        // The store does not retain the monitor. The app has one, owned by
+        // AppModel for as long as the app runs, so the callback never sees a
+        // dead pointer.
         var ctx = SCDynamicStoreContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let callback: SCDynamicStoreCallBack = { _, _, info in
             guard let info else { return }

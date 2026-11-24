@@ -1,24 +1,12 @@
 package contract
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/miekg/dns"
 
-	"github.com/n0rdy/nordyg/core/internal/bridge"
+	"github.com/n0rdy/nordyg/core/internal/testdns"
 )
-
-func code(err error) string {
-	var e *bridge.Error
-	if errors.As(err, &e) {
-		return e.Code
-	}
-	if err == nil {
-		return ""
-	}
-	return "<" + err.Error() + ">"
-}
 
 func TestEndpointValidate(t *testing.T) {
 	cases := []struct {
@@ -43,7 +31,7 @@ func TestEndpointValidate(t *testing.T) {
 		{"bad transport", Endpoint{Transport: "smtp", Address: "1.1.1.1:53"}, CodeBadEndpoint},
 	}
 	for _, c := range cases {
-		if got := code(c.ep.Validate()); got != c.want {
+		if got := testdns.Code(c.ep.Validate()); got != c.want {
 			t.Errorf("%s: want %q, got %q", c.name, c.want, got)
 		}
 	}
@@ -58,7 +46,7 @@ func TestParseType(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"", "NOPE", "TYPE", "TYPE70000", "TYPEx"} {
-		if _, err := ParseType(bad); code(err) != CodeUnknownType {
+		if _, err := ParseType(bad); testdns.Code(err) != CodeUnknownType {
 			t.Errorf("%q: want unknown_type, got %v", bad, err)
 		}
 	}

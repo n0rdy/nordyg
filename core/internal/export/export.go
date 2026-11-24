@@ -1,15 +1,18 @@
-// Package export implements the "export" op (contract §8): the CLI command
+// Package export implements the "export" op: the CLI command
 // equivalent to a query, for tickets and chats.
 package export
 
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"math"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/miekg/dns"
 
 	"github.com/n0rdy/nordyg/core/internal/bridge"
 	"github.com/n0rdy/nordyg/core/internal/contract"
@@ -33,17 +36,10 @@ type Result struct {
 
 // Register attaches the op to d.
 func Register(d *bridge.Dispatcher) {
-	d.Register("export", func(_ context.Context, raw json.RawMessage) (any, error) {
-		var p Params
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, &bridge.Error{Code: bridge.CodeBadRequest, Message: "params: " + err.Error()}
-		}
+	d.Register("export", bridge.Typed(func(_ context.Context, p Params) (Result, error) {
 		cmd, err := Command(p)
-		if err != nil {
-			return nil, err
-		}
-		return Result{Command: cmd}, nil
-	})
+		return Result{Command: cmd}, err
+	}))
 }
 
 // Command builds the command line for the requested format.
@@ -97,23 +93,23 @@ func hostPort(addr string) (string, string) {
 	return h, p
 }
 
-// dig: BIND 9.18+ speaks DoT (+tls) and DoH (+https); DoQ is not supported.
 // digTrace is the trace op as dig: from the root, no resolver.
 func digTrace(r contract.Resolved, o contract.Effective) string {
 	args := []string{"dig", name(r), typeName(r)}
-	if r.Class != 1 {
-		args = append(args, "-c", className(r.Class))
+	if r.Class != dns.ClassINET {
+		args = append(args, "-c", dns.ClassToString[r.Class])
 	}
 	args = append(args, "+trace")
 	if o.EDNS && o.DNSSECOK {
 		args = append(args, "+dnssec")
 	}
 	if o.Timeout != contract.DefaultTimeout {
-		args = append(args, "+timeout="+strconv.Itoa(int(o.Timeout.Seconds())))
+		args = append(args, "+timeout="+seconds(o.Timeout))
 	}
 	return join(args)
 }
 
+// dig: BIND 9.18+ speaks DoT (+tls) and DoH (+https); DoQ is not supported.
 func dig(r contract.Resolved, ep contract.Endpoint, o contract.Effective) (string, error) {
 	args := []string{"dig"}
 	switch ep.Transport {
@@ -133,8 +129,8 @@ func dig(r contract.Resolved, ep contract.Endpoint, o contract.Effective) (strin
 		return "", unsupported("dig", "no DNS-over-QUIC support")
 	}
 	args = append(args, name(r), typeName(r))
-	if r.Class != 1 {
-		args = append(args, "-c", className(r.Class))
+	if r.Class != dns.ClassINET {
+		args = append(args, "-c", dns.ClassToString[r.Class])
 	}
 	switch ep.Transport {
 	case contract.TCP:
@@ -179,7 +175,7 @@ func dig(r contract.Resolved, ep contract.Endpoint, o contract.Effective) (strin
 		args = append(args, "+cdflag")
 	}
 	if o.Timeout != contract.DefaultTimeout {
-		args = append(args, "+timeout="+strconv.Itoa(int(o.Timeout.Seconds())))
+		args = append(args, "+timeout="+seconds(o.Timeout))
 	}
 	return join(args), nil
 }
@@ -189,8 +185,8 @@ func nslookup(r contract.Resolved, ep contract.Endpoint, o contract.Effective) (
 		return "", unsupported("nslookup", "only plain UDP/TCP")
 	}
 	args := []string{"nslookup", "-type=" + typeName(r)}
-	if r.Class != 1 {
-		args = append(args, "-class="+className(r.Class))
+	if r.Class != dns.ClassINET {
+		args = append(args, "-class="+dns.ClassToString[r.Class])
 	}
 	h, p := hostPort(ep.Address)
 	if p != "" && p != "53" {
@@ -203,7 +199,7 @@ func nslookup(r contract.Resolved, ep contract.Endpoint, o contract.Effective) (
 		args = append(args, "-norecurse")
 	}
 	if o.Timeout != contract.DefaultTimeout {
-		args = append(args, "-timeout="+strconv.Itoa(int(o.Timeout.Seconds())))
+		args = append(args, "-timeout="+seconds(o.Timeout))
 	}
 	args = append(args, name(r), h)
 	return join(args), nil
@@ -211,8 +207,8 @@ func nslookup(r contract.Resolved, ep contract.Endpoint, o contract.Effective) (
 
 func doggo(r contract.Resolved, ep contract.Endpoint, o contract.Effective) (string, error) {
 	args := []string{"doggo", name(r), typeName(r)}
-	if r.Class != 1 {
-		args = append(args, className(r.Class))
+	if r.Class != dns.ClassINET {
+		args = append(args, dns.ClassToString[r.Class])
 	}
 	switch ep.Transport {
 	case contract.UDP:
@@ -261,20 +257,16 @@ func curl(r contract.Resolved, ep contract.Endpoint, o contract.Effective) (stri
 }
 
 func defaultPort(transport string) string {
-	if transport == contract.DoT || transport == contract.DoQ {
+	if transport == contract.DoT {
 		return "853"
 	}
 	return "53"
 }
 
-func className(c uint16) string {
-	switch c {
-	case 3:
-		return "CH"
-	case 4:
-		return "HS"
-	}
-	return "IN"
+// seconds renders a timeout for tools that take whole seconds, rounded up so
+// that less than a second does not become 0.
+func seconds(d time.Duration) string {
+	return strconv.Itoa(int(math.Ceil(d.Seconds())))
 }
 
 // join shell-quotes arguments that need it.

@@ -1,5 +1,5 @@
 // Package dnssec validates answers against the root trust anchors and reports
-// the chain link by link (contract §2.7). It never trusts a resolver's AD bit.
+// the chain link by link. It never trusts a resolver's AD bit.
 package dnssec
 
 import "time"

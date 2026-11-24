@@ -14,6 +14,8 @@ import (
 	"github.com/n0rdy/nordyg/core/internal/contract"
 	"github.com/n0rdy/nordyg/core/internal/dnssec"
 	"github.com/n0rdy/nordyg/core/internal/fetch"
+	"github.com/n0rdy/nordyg/core/internal/prose"
+	"github.com/n0rdy/nordyg/core/internal/resolve"
 )
 
 // HTTPSHost is one web name (the zone, or www) and what each of its
@@ -30,6 +32,8 @@ type HTTPSHost struct {
 	// even after a retry, so those addresses were not checked.
 	LookupFailed []string      `json:"lookup_failed,omitempty"`
 	Servers      []certs.Probe `json:"servers"`
+
+	tlsa []*dns.TLSA // the records behind TLSA
 }
 
 // HTTPS is the certificate check.
@@ -56,7 +60,7 @@ func (op *Op) inspector(p Params, o contract.Effective) *certs.Inspector {
 }
 
 // checkHTTPS looks at the zone and www: every address, port 443.
-func (op *Op) checkHTTPS(ctx context.Context, p Params, r *resolver, o contract.Effective, apex string, caa CAA) HTTPS {
+func (op *Op) checkHTTPS(ctx context.Context, p Params, r *resolve.Resolver, o contract.Effective, apex string, caa CAA) HTTPS {
 	sec := HTTPS{Hosts: []HTTPSHost{}}
 	in := op.inspector(p, o)
 	f := dnssec.Shared(&dnssec.Recursive{Client: op.Client, Endpoint: p.Endpoint, Options: o, Bootstrap: p.Bootstrap})
@@ -79,19 +83,19 @@ func (op *Op) checkHTTPS(ctx context.Context, p Params, r *resolver, o contract.
 		sem := make(chan struct{}, maxProbes)
 		for i, ip := range ips {
 			wg.Add(1)
-			go func(i int, ip string) {
+			go func() {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
 				host.Servers[i] = op.probeHTTPS(ctx, in, name, ip)
-			}(i, ip)
+			}()
 		}
 		checkTLSA(ctx, f, &host)
 		wg.Wait()
 		if host.TLSAStatus == dnssec.Secure {
 			m := false
 			for _, s := range host.Servers {
-				if s.Connected && certs.MatchTLSA(host.tlsaRecords(), s.Certificates(), s.Trusted) {
+				if s.Connected && certs.MatchTLSA(host.tlsa, s.Certificates(), s.Trusted) {
 					m = true
 				}
 			}
@@ -106,12 +110,12 @@ func (op *Op) checkHTTPS(ctx context.Context, p Params, r *resolver, o contract.
 // webAddrs looks up A and AAAA for name. A lookup that errors or comes back
 // SERVFAIL (anything but NOERROR or NXDOMAIN) is retried once and then named
 // in failed, so a timeout is never read as "this name has no website".
-func webAddrs(ctx context.Context, r *resolver, name string) (ips, failed []string) {
+func webAddrs(ctx context.Context, r *resolve.Resolver, name string) (ips, failed []string) {
 	for _, t := range []uint16{dns.TypeA, dns.TypeAAAA} {
 		var m *dns.Msg
 		ok := false
 		for range 2 {
-			msg, err := r.lookup(ctx, name, t)
+			msg, err := r.Lookup(ctx, name, t)
 			if err == nil && (msg.Rcode == dns.RcodeSuccess || msg.Rcode == dns.RcodeNameError) {
 				m, ok = msg, true
 				break
@@ -158,6 +162,7 @@ func checkTLSA(ctx context.Context, f dnssec.Fetcher, host *HTTPSHost) {
 	for _, rr := range m.Answer {
 		if t, ok := rr.(*dns.TLSA); ok {
 			host.TLSA = append(host.TLSA, strings.TrimPrefix(t.String(), t.Hdr.String()))
+			host.tlsa = append(host.tlsa, t)
 		}
 	}
 	if len(host.TLSA) == 0 {
@@ -167,16 +172,6 @@ func checkTLSA(ctx context.Context, f dnssec.Fetcher, host *HTTPSHost) {
 	if err == nil && res != nil {
 		host.TLSAStatus = res.Status
 	}
-}
-
-func (h *HTTPSHost) tlsaRecords() []*dns.TLSA {
-	var out []*dns.TLSA
-	for _, s := range h.TLSA {
-		if rr, err := dns.NewRR("x. 300 IN TLSA " + s); err == nil {
-			out = append(out, rr.(*dns.TLSA))
-		}
-	}
-	return out
 }
 
 // judgeHTTPS turns probes into findings, one line per problem with the
@@ -209,7 +204,7 @@ func judgeHTTPS(sec *HTTPS, caa CAA) {
 				lookups = "lookups"
 			}
 			sec.add(Warn, "%s: the %s %s failed through this resolver, so %s %s not checked. Run the check again",
-				prose(h.Name), strings.Join(h.LookupFailed, " and "), lookups, what, verb)
+				prose.Name(h.Name), strings.Join(h.LookupFailed, " and "), lookups, what, verb)
 			if len(h.Servers) == 0 {
 				continue
 			}
@@ -241,13 +236,13 @@ func judgeHTTPS(sec *HTTPS, caa CAA) {
 				r := s.Revoked[0]
 				add(Fail, fmt.Sprintf("serves a chain through %s, which its CA revoked on %s (%s)", r.Subject, r.RevokedAt.Format("2 Jan 2006"), r.Reason), s.IP)
 			case !s.NameMatch && len(s.Chain) > 0:
-				add(Fail, fmt.Sprintf("serves a certificate for %s, which does not cover %s", strings.Join(firstN(s.Chain[0].Names, 3), ", "), prose(h.Name)), s.IP)
+				add(Fail, fmt.Sprintf("serves a certificate for %s, which does not cover %s", strings.Join(firstN(s.Chain[0].Names, 3), ", "), prose.Name(h.Name)), s.IP)
 			case s.ExpiresInDays < 0:
 				add(Fail, "serves an expired certificate", s.IP)
 			case !s.Trusted:
 				add(Fail, "serves a certificate macOS does not trust: "+s.TrustError, s.IP)
 			case s.ExpiresInDays < 14:
-				add(Warn, fmt.Sprintf("serves a certificate that expires in %d day%s", s.ExpiresInDays, plural(s.ExpiresInDays)), s.IP)
+				add(Warn, fmt.Sprintf("serves a certificate that expires in %d day%s", s.ExpiresInDays, prose.Plural(s.ExpiresInDays)), s.IP)
 			}
 			if chain := s.Certificates(); len(allowed) > 0 && s.Trusted && len(chain) > 0 {
 				if ids := certs.CAAIdentifiers(chain[0]); ids != nil && !overlaps(ids, allowed) {
@@ -256,11 +251,11 @@ func judgeHTTPS(sec *HTTPS, caa CAA) {
 			}
 		}
 		if connected == 0 && skipped < len(h.Servers) {
-			sec.add(Info, "%s does not answer HTTPS on port 443", prose(h.Name))
+			sec.add(Info, "%s does not answer HTTPS on port 443", prose.Name(h.Name))
 			continue
 		}
 		if connected > 0 {
-			working = append(working, prose(h.Name))
+			working = append(working, prose.Name(h.Name))
 		}
 		msgs := make([]string, 0, len(problems))
 		for m := range problems {
@@ -273,41 +268,41 @@ func judgeHTTPS(sec *HTTPS, caa CAA) {
 			if len(ips) == connected && connected > 1 {
 				who = "every address"
 			}
-			sec.add(status[m], "%s: %s %s", prose(h.Name), who, m)
+			sec.add(status[m], "%s: %s %s", prose.Name(h.Name), who, m)
 		}
 		if len(fingerprints) > 1 {
-			sec.add(Info, "%s: the addresses serve %d different certificates", prose(h.Name), len(fingerprints))
+			sec.add(Info, "%s: the addresses serve %d different certificates", prose.Name(h.Name), len(fingerprints))
 		}
 		switch {
 		case h.TLSAError != "":
-			sec.add(Info, "%s: the TLSA lookup failed through this resolver, so DANE was not checked", prose(h.Name))
+			sec.add(Info, "%s: the TLSA lookup failed through this resolver, so DANE was not checked", prose.Name(h.Name))
 		case len(h.TLSA) > 0 && h.TLSAStatus == dnssec.Bogus:
-			sec.add(Fail, "%s: the TLSA records fail DNSSEC validation, so DANE clients refuse to connect", prose(h.Name))
+			sec.add(Fail, "%s: the TLSA records fail DNSSEC validation, so DANE clients refuse to connect", prose.Name(h.Name))
 		case len(h.TLSA) > 0 && h.TLSAStatus == dnssec.Insecure:
-			sec.add(Warn, "%s publishes TLSA records without DNSSEC, so clients ignore them", prose(h.Name))
+			sec.add(Warn, "%s publishes TLSA records without DNSSEC, so clients ignore them", prose.Name(h.Name))
 		case len(h.TLSA) > 0 && h.TLSAStatus != dnssec.Secure:
-			sec.add(Info, "%s: the TLSA records could not be DNSSEC-validated through this resolver, so DANE was not checked", prose(h.Name))
+			sec.add(Info, "%s: the TLSA records could not be DNSSEC-validated through this resolver, so DANE was not checked", prose.Name(h.Name))
 		case h.TLSAMatch != nil && !*h.TLSAMatch:
-			sec.add(Fail, "%s: the TLSA records match none of the certificates served, so DANE clients refuse to connect", prose(h.Name))
+			sec.add(Fail, "%s: the TLSA records match none of the certificates served, so DANE clients refuse to connect", prose.Name(h.Name))
 		}
 		if skipped > 0 {
 			scope = "every IPv4 address"
-			sec.add(Info, "%s: this Mac has no IPv6 route, so %d IPv6 address%s could not be checked", prose(h.Name), skipped, pluralEs(skipped))
+			sec.add(Info, "%s: this Mac has no IPv6 route, so %d IPv6 address%s could not be checked", prose.Name(h.Name), skipped, prose.PluralEs(skipped))
 		}
 	}
 	if served == 0 {
 		sec.settle("")
 		return
 	}
-	okMsg := fmt.Sprintf("%s serves a valid certificate on %s, expiring in %d day%s", working[0], scope, minDays, plural(minDays))
+	okMsg := fmt.Sprintf("%s serves a valid certificate on %s, expiring in %d day%s", working[0], scope, minDays, prose.Plural(minDays))
 	if len(working) > 1 {
-		okMsg = fmt.Sprintf("%s serve a valid certificate on %s, the soonest expiring in %d day%s", strings.Join(working, " and "), scope, minDays, plural(minDays))
+		okMsg = fmt.Sprintf("%s serve a valid certificate on %s, the soonest expiring in %d day%s", strings.Join(working, " and "), scope, minDays, prose.Plural(minDays))
 	}
 	sec.settle(okMsg)
 	// Notes (another certificate per address, an IPv6 address not reached)
 	// do not outweigh a working site.
 	if sec.Verdict.Status == Info {
-		sec.Verdict = Finding{OK, okMsg}
+		sec.Verdict = Finding{Status: OK, Message: okMsg}
 	}
 }
 

@@ -30,6 +30,7 @@ func TestRunReturnsContractShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testdns.Sample(t, "query", res)
 	if res.QuestionSent.Name != "example.test." || res.QuestionSent.Type != "MX" || res.QuestionSent.Class != "IN" {
 		t.Fatalf("question_sent: %+v", res.QuestionSent)
 	}
@@ -90,7 +91,7 @@ func TestHandleValidation(t *testing.T) {
 		"unknown field": {`{"question":{"name":"x","type":"A"},"endpoint":{"transport":"udp","address":"127.0.0.1:1"},"future":1}`, ""},
 	}
 	for name, c := range cases {
-		_, err := op.Handle(context.Background(), json.RawMessage(c.raw))
+		_, err := bridge.Typed(op.Run)(context.Background(), json.RawMessage(c.raw))
 		var e *bridge.Error
 		got := ""
 		if errors.As(err, &e) {

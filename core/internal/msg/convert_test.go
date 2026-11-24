@@ -1,22 +1,16 @@
 package msg
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/miekg/dns"
-)
 
-func rr(t *testing.T, s string) dns.RR {
-	t.Helper()
-	r, err := dns.NewRR(s)
-	if err != nil {
-		t.Fatalf("bad RR %q: %v", s, err)
-	}
-	return r
-}
+	"github.com/n0rdy/nordyg/core/internal/testdns"
+)
 
 func TestRecordFields(t *testing.T) {
 	cases := []struct {
@@ -37,7 +31,7 @@ func TestRecordFields(t *testing.T) {
 		{"x. 300 IN SOA ns.x. hostmaster.x. 2026090401 7200 3600 1209600 300", "SOA", "ns.x. hostmaster.x. 2026090401 7200 3600 1209600 300", map[string]any{"serial": uint32(2026090401), "minimum": uint32(300)}},
 	}
 	for _, c := range cases {
-		rec := Record(rr(t, c.rr))
+		rec := Record(testdns.RR(t, c.rr))
 		if rec.Type != c.typ || rec.Rdata != c.rdata || rec.Name != "x." || rec.TTL != 300 || rec.Class != "IN" {
 			t.Errorf("%s: %+v", c.rr, rec)
 		}
@@ -53,25 +47,49 @@ func TestRecordFields(t *testing.T) {
 }
 
 func TestUnknownTypeIsHexNotError(t *testing.T) {
-	rec := Record(rr(t, "x. 60 IN TYPE65534 \\# 4 0A000001"))
+	rec := Record(testdns.RR(t, "x. 60 IN TYPE65534 \\# 4 0A000001"))
 	if rec.Type != "TYPE65534" || rec.TypeCode != 65534 || rec.Rdata != `\# 4 0A000001` || rec.Raw != "0a000001" || rec.Fields != nil {
 		t.Fatalf("%+v", rec)
 	}
 }
 
+func TestRSAKeyBits(t *testing.T) {
+	// RFC 3110: exponent length, exponent (65537), modulus.
+	modulus := make([]byte, 256)
+	modulus[0] = 0x80
+	whole := append([]byte{3, 1, 0, 1}, modulus...)
+	// A two-byte exponent length is announced by a leading zero.
+	long := append([]byte{0, 0, 3, 1, 0, 1}, modulus...)
+	for name, tc := range map[string]struct {
+		key  []byte
+		bits int
+	}{
+		"2048 bit":                 {whole, 2048},
+		"two-byte exponent length": {long, 2048},
+		"leading zero in modulus":  {append([]byte{3, 1, 0, 1, 0}, modulus...), 2048},
+		"no modulus":               {[]byte{3, 1, 0, 1}, 0},
+		"exponent runs past end":   {[]byte{16, 1, 2}, 0},
+		"long form runs past end":  {[]byte{0, 1, 0, 1}, 0},
+	} {
+		k := &dns.DNSKEY{Algorithm: dns.RSASHA256, PublicKey: base64.StdEncoding.EncodeToString(tc.key)}
+		if got := keyBits(k); got != tc.bits {
+			t.Errorf("%s: got %d bits, want %d", name, got, tc.bits)
+		}
+	}
+}
+
 func TestDNSKEYAndRRSIGFields(t *testing.T) {
-	// A real 2048-bit RSA KSK-shaped key is long; use ECDSA and check role/bits/tag.
-	k := rr(t, "x. 300 IN DNSKEY 257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==").(*dns.DNSKEY)
+	k := testdns.RR(t, "x. 300 IN DNSKEY 257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==").(*dns.DNSKEY)
 	rec := Record(k)
 	if rec.Fields["role"] != "ksk" || rec.Fields["bits"] != 256 || rec.Fields["key_tag"] != k.KeyTag() || rec.Fields["algorithm_name"] != "ECDSAP256SHA256" {
 		t.Fatalf("%+v", rec.Fields)
 	}
-	z := rr(t, "x. 300 IN DNSKEY 256 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==")
+	z := testdns.RR(t, "x. 300 IN DNSKEY 256 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==")
 	if Record(z).Fields["role"] != "zsk" {
 		t.Fatal("zsk role")
 	}
 
-	sig := rr(t, "x. 300 IN RRSIG A 13 1 300 20260918000000 20260904000000 2371 x. AAAA").(*dns.RRSIG)
+	sig := testdns.RR(t, "x. 300 IN RRSIG A 13 1 300 20260918000000 20260904000000 2371 x. AAAA").(*dns.RRSIG)
 	rec = Record(sig)
 	exp, ok := rec.Fields["expiration"].(time.Time)
 	if !ok || exp.Format(time.RFC3339) != "2026-09-18T00:00:00Z" || rec.Fields["type_covered"] != "A" || rec.Fields["signer"] != "x." {
@@ -80,16 +98,21 @@ func TestDNSKEYAndRRSIGFields(t *testing.T) {
 }
 
 func TestSerialTimeWrap(t *testing.T) {
-	now := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
-	// 10 days after now, expressed mod 2^32.
-	want := now.Add(10 * 24 * time.Hour)
-	if got := serialTimeAt(uint32(want.Unix()), now); !got.Equal(want) {
-		t.Fatalf("got %v want %v", got, want)
-	}
-	// 10 days before.
-	want = now.Add(-10 * 24 * time.Hour)
-	if got := serialTimeAt(uint32(want.Unix()), now); !got.Equal(want) {
-		t.Fatalf("got %v want %v", got, want)
+	// The 32-bit clock wraps on 2106-02-07.
+	beforeWrap := time.Date(2106, 2, 1, 0, 0, 0, 0, time.UTC)
+	for name, tc := range map[string]struct {
+		now  time.Time
+		want time.Time
+	}{
+		"ten days ahead":         {time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)},
+		"ten days back":          {time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC), time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)},
+		"ahead, across the wrap": {beforeWrap, beforeWrap.Add(10 * 24 * time.Hour)},
+		"back, across the wrap":  {beforeWrap.Add(10 * 24 * time.Hour), beforeWrap},
+		"after the wrap":         {time.Date(2110, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2110, 1, 11, 0, 0, 0, 0, time.UTC)},
+	} {
+		if got := serialTimeAt(uint32(tc.want.Unix()), tc.now); !got.Equal(tc.want) {
+			t.Errorf("%s: got %v, want %v", name, got, tc.want)
+		}
 	}
 }
 
@@ -97,9 +120,9 @@ func TestConvertMessageWithEDNS(t *testing.T) {
 	m := new(dns.Msg)
 	m.SetQuestion("x.", dns.TypeA)
 	m.Response, m.RecursionAvailable, m.AuthenticatedData = true, true, true
-	m.Answer = []dns.RR{rr(t, "x. 300 IN A 192.0.2.1")}
-	m.Ns = []dns.RR{rr(t, "x. 300 IN NS ns.x.")}
-	m.Extra = []dns.RR{rr(t, "ns.x. 300 IN A 192.0.2.2")}
+	m.Answer = []dns.RR{testdns.RR(t, "x. 300 IN A 192.0.2.1")}
+	m.Ns = []dns.RR{testdns.RR(t, "x. 300 IN NS ns.x.")}
+	m.Extra = []dns.RR{testdns.RR(t, "ns.x. 300 IN A 192.0.2.2")}
 	opt := &dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT}}
 	opt.SetUDPSize(1232)
 	opt.SetDo()
@@ -173,7 +196,7 @@ func TestExtendedRcode(t *testing.T) {
 }
 
 func TestHTTPSFields(t *testing.T) {
-	rec := Record(rr(t, `x. 300 IN HTTPS 1 . alpn="h2,h3" port=8443 ipv4hint=192.0.2.1`))
+	rec := Record(testdns.RR(t, `x. 300 IN HTTPS 1 . alpn="h2,h3" port=8443 ipv4hint=192.0.2.1`))
 	p := rec.Fields["params"].(map[string]any)
 	if rec.Fields["priority"] != uint16(1) || rec.Fields["target"] != "." || p["port"] != uint16(8443) {
 		t.Fatalf("%+v", rec.Fields)

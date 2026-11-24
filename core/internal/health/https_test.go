@@ -19,6 +19,7 @@ import (
 	"github.com/n0rdy/nordyg/core/internal/certs"
 	"github.com/n0rdy/nordyg/core/internal/contract"
 	"github.com/n0rdy/nordyg/core/internal/dnssec"
+	"github.com/n0rdy/nordyg/core/internal/resolve"
 	"github.com/n0rdy/nordyg/core/internal/testdns"
 	"github.com/n0rdy/nordyg/core/internal/transport"
 )
@@ -149,13 +150,13 @@ func TestWebAddrsFailedLookupIsNotNoWebsite(t *testing.T) {
 			aTries.Add(1)
 			m.Rcode = dns.RcodeServerFailure
 		case qq.Name == "flaky.example." && qq.Qtype == dns.TypeAAAA:
-			m.Answer = []dns.RR{rr(t, "flaky.example. 300 IN AAAA 2001:db8::80")}
+			m.Answer = []dns.RR{testdns.RR(t, "flaky.example. 300 IN AAAA 2001:db8::80")}
 		case qq.Name == "none.example.":
 			m.Rcode = dns.RcodeNameError
 		}
 		return m
 	})
-	r := &resolver{client: &transport.Client{}, ep: contract.Endpoint{Transport: "udp", Address: srv}, o: contract.Options{TimeoutMS: 300}.Resolve()}
+	r := &resolve.Resolver{Client: &transport.Client{}, Endpoint: contract.Endpoint{Transport: "udp", Address: srv}, Options: contract.Options{TimeoutMS: 300}.Resolve()}
 	ips, failed := webAddrs(context.Background(), r, "flaky.example.")
 	if len(ips) != 1 || len(failed) != 1 || failed[0] != "A" || aTries.Load() != 2 {
 		t.Fatalf("ips %v failed %v after %d A tries", ips, failed, aTries.Load())

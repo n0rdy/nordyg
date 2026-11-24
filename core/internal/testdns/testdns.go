@@ -13,17 +13,23 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
+	"errors"
 	"io"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
+
+	"github.com/n0rdy/nordyg/core/internal/bridge"
 )
 
 // Answer builds the reply for a query.
@@ -138,8 +144,7 @@ func DoT(t testing.TB, c *Cert, a Answer) string {
 }
 
 // DoH starts an RFC 8484 server. It returns the ip:port; build the URL with
-// the certificate's name and that port. Requests is incremented per request
-// if non-nil.
+// the certificate's name and that port.
 func DoH(t testing.TB, c *Cert, a Answer) string {
 	t.Helper()
 	s := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -238,6 +243,60 @@ func serveDoQConn(ctx context.Context, conn *quic.Conn, a Answer) {
 			_, _ = st.Write(append(lenBuf[:], out...))
 		}()
 	}
+}
+
+// SamplesEnv names a directory. When it is set, Sample writes there, which is
+// how `make smoke` gets real op results for the Swift side to decode.
+const SamplesEnv = "NORDYG_SAMPLES"
+
+// Sample saves v, an op result built from a test fixture, as <name>.json.
+// It does nothing unless SamplesEnv is set.
+func Sample(t testing.TB, name string, v any) {
+	t.Helper()
+	dir := os.Getenv(SamplesEnv)
+	if dir == "" {
+		return
+	}
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		t.Fatalf("sample %s: %v", name, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name+".json"), b, 0o644); err != nil {
+		t.Fatalf("sample %s: %v", name, err)
+	}
+}
+
+// RR parses one record in presentation format.
+func RR(t testing.TB, s string) dns.RR {
+	t.Helper()
+	r, err := dns.NewRR(s)
+	if err != nil {
+		t.Fatalf("bad RR %q: %v", s, err)
+	}
+	return r
+}
+
+// Reply starts a response to q that mirrors its EDNS.
+func Reply(q *dns.Msg) *dns.Msg {
+	m := new(dns.Msg)
+	m.SetReply(q)
+	if opt := q.IsEdns0(); opt != nil {
+		m.SetEdns0(1232, opt.Do())
+	}
+	return m
+}
+
+// Code is what a test compares an op's error with: the bridge error code,
+// the error text when it is some other error, and "" for nil.
+func Code(err error) string {
+	var e *bridge.Error
+	if errors.As(err, &e) {
+		return e.Code
+	}
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // Zone is a tiny fixture: name → records, answered authoritatively; anything

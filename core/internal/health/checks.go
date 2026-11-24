@@ -3,7 +3,9 @@ package health
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"sort"
 	"strings"
 
@@ -12,10 +14,11 @@ import (
 	"github.com/n0rdy/nordyg/core/internal/contract"
 	"github.com/n0rdy/nordyg/core/internal/dnssec"
 	"github.com/n0rdy/nordyg/core/internal/msg"
+	"github.com/n0rdy/nordyg/core/internal/prose"
+	"github.com/n0rdy/nordyg/core/internal/resolve"
 	"github.com/n0rdy/nordyg/core/internal/trace"
+	"github.com/n0rdy/nordyg/core/internal/verdict"
 )
-
-// --- delegation --------------------------------------------------------------
 
 func checkDelegation(d *Delegation, apex string, servers []Server, extra map[string][]string) {
 	if n := len(d.ParentNS); n < 2 {
@@ -26,18 +29,22 @@ func checkDelegation(d *Delegation, apex string, servers []Server, extra map[str
 	for _, s := range servers {
 		if s.Authoritative {
 			authoritative++
-			key := strings.Join(s.NS, " ")
-			sets[key] = append(sets[key], label(s))
+			// An empty set means the NS query to this server failed, which
+			// is not a disagreement.
+			if len(s.NS) > 0 {
+				key := strings.Join(s.NS, " ")
+				sets[key] = append(sets[key], label(s))
+			}
 		}
 	}
 	if authoritative == 0 {
-		d.add(Fail, "no nameserver answers authoritatively for %s", prose(apex))
+		d.add(Fail, "no nameserver answers authoritatively for %s", prose.Name(apex))
 	}
 	if len(d.ChildNS) > 0 {
 		var onlyParent []string
 		for _, n := range d.ParentNS {
 			if !contains(d.ChildNS, n) {
-				onlyParent = append(onlyParent, prose(n))
+				onlyParent = append(onlyParent, prose.Name(n))
 			}
 		}
 		if len(onlyParent) > 0 {
@@ -47,7 +54,7 @@ func checkDelegation(d *Delegation, apex string, servers []Server, extra map[str
 	if len(extra) > 0 {
 		var onlyChild []string
 		for n := range extra {
-			onlyChild = append(onlyChild, prose(n))
+			onlyChild = append(onlyChild, prose.Name(n))
 		}
 		sort.Strings(onlyChild)
 		d.add(Warn, "in the zone's own NS set but not delegated by the parent, so resolvers coming from the parent never use them: %s", strings.Join(onlyChild, ", "))
@@ -73,7 +80,7 @@ func checkDelegation(d *Delegation, apex string, servers []Server, extra map[str
 	if len(v4) > 0 && len(v6) == 0 {
 		d.add(Info, "no nameserver has an IPv6 address, so IPv6-only resolvers cannot reach the zone")
 	}
-	d.settle(fmt.Sprintf("the parent delegates to %d nameserver%s and the zone lists the same set", len(d.ParentNS), plural(len(d.ParentNS))))
+	d.settle(fmt.Sprintf("the parent delegates to %d nameserver%s and the zone lists the same set", len(d.ParentNS), prose.Plural(len(d.ParentNS))))
 }
 
 func sameNet(ips []string) bool {
@@ -88,21 +95,21 @@ func sameNet(ips []string) bool {
 	return len(nets) == 1
 }
 
-// --- nameservers -------------------------------------------------------------
-
 func checkServers(servers []Server) Nameservers {
 	sec := Nameservers{Servers: servers}
 	answering := 0
 	for i := range servers {
 		s := &servers[i]
 		p := func(status, format string, args ...any) {
-			s.Problems = append(s.Problems, Finding{status, fmt.Sprintf(format, args...)})
+			s.Problems = append(s.Problems, Finding{Status: status, Message: fmt.Sprintf(format, args...)})
 		}
 		switch {
 		case s.Skipped:
 			p(Info, "%s", s.Error)
+		case s.unresolved:
+			p(Warn, "could not be checked, because its address lookup failed through this resolver")
 		case s.IP == "":
-			p(Fail, "%s", s.Error)
+			p(Fail, "has no A or AAAA records")
 		case !s.Answered && s.TCP:
 			p(Fail, "answers over TCP but not over UDP: %s", s.Error)
 		case !s.Answered:
@@ -132,7 +139,7 @@ func checkServers(servers []Server) Nameservers {
 		}
 		s.Status = OK
 		for _, f := range s.Problems {
-			if rank(f.Status) > rank(s.Status) {
+			if verdict.Rank(f.Status) > verdict.Rank(s.Status) {
 				s.Status = f.Status
 			}
 			if !s.Skipped {
@@ -147,7 +154,7 @@ func checkServers(servers []Server) Nameservers {
 		}
 	}
 	if skipped > 0 {
-		sec.add(Info, "this Mac has no IPv6 route, so %d IPv6 address%s could not be checked", skipped, pluralEs(skipped))
+		sec.add(Info, "this Mac has no IPv6 route, so %d IPv6 address%s could not be checked", skipped, prose.PluralEs(skipped))
 	}
 	okMsg := fmt.Sprintf("all %d addresses answer authoritatively over UDP and TCP", answering)
 	if answering == 1 {
@@ -160,15 +167,6 @@ func checkServers(servers []Server) Nameservers {
 	}
 	return sec
 }
-
-func pluralEs(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "es"
-}
-
-// --- SOA ---------------------------------------------------------------------
 
 func checkSOA(servers []Server, apex string) SOA {
 	sec := SOA{Serials: []SerialGroup{}}
@@ -188,10 +186,11 @@ func checkSOA(servers []Server, apex string) SOA {
 			sec.Serials = append(sec.Serials, SerialGroup{Serial: *s.Serial})
 		}
 		sec.Serials[i].Servers = append(sec.Serials[i].Servers, label(s))
+		sec.Serials[i].names = append(sec.Serials[i].names, s.Name)
 	}
 	sort.Slice(sec.Serials, func(a, b int) bool { return sec.Serials[a].Serial > sec.Serials[b].Serial })
 	if soa == nil {
-		sec.add(Fail, "no nameserver returned the SOA record of %s", prose(apex))
+		sec.add(Fail, "no nameserver returned the SOA record of %s", prose.Name(apex))
 		sec.settle("")
 		return sec
 	}
@@ -238,8 +237,8 @@ func checkSOA(servers []Server, apex string) SOA {
 func byProvider(groups []SerialGroup) bool {
 	owner := map[string]int{}
 	for i, g := range groups {
-		for _, s := range g.Servers {
-			p := provider(s)
+		for _, name := range g.names {
+			p := provider(name)
 			if j, ok := owner[p]; ok && j != i {
 				return false
 			}
@@ -249,9 +248,8 @@ func byProvider(groups []SerialGroup) bool {
 	return true
 }
 
-// provider is the last two labels of a server label's name.
-func provider(label string) string {
-	name := strings.Fields(label)[0]
+// provider is the last two labels of a nameserver's name.
+func provider(name string) string {
 	parts := strings.Split(strings.TrimSuffix(name, "."), ".")
 	if len(parts) > 2 {
 		parts = parts[len(parts)-2:]
@@ -278,8 +276,6 @@ func dur(s uint32) string {
 	}
 	return fmt.Sprintf("%d s", s)
 }
-
-// --- glue --------------------------------------------------------------------
 
 func (op *Op) checkGlue(ctx context.Context, apex string, ref *trace.Referral, servers []Server, o contract.Effective) Glue {
 	sec := Glue{Entries: []GlueEntry{}}
@@ -317,15 +313,15 @@ func (op *Op) checkGlue(ctx context.Context, apex string, ref *trace.Referral, s
 		e.Match = equalSets(e.Parent, e.Child)
 		switch {
 		case len(e.Parent) == 0:
-			sec.add(Fail, "%s is inside the zone but the parent has no glue for it, so resolvers cannot reach it", prose(name))
+			sec.add(Fail, "%s is inside the zone but the parent has no glue for it, so resolvers cannot reach it", prose.Name(name))
 		case authIP == "":
-			sec.add(Info, "the zone's own records for %s could not be read, so its glue was not compared", prose(name))
+			sec.add(Info, "the zone's own records for %s could not be read, so its glue was not compared", prose.Name(name))
 		case len(e.Child) == 0:
-			sec.add(Warn, "the zone has no A or AAAA record for its own nameserver %s, so only the parent's glue points at it", prose(name))
+			sec.add(Warn, "the zone has no A or AAAA record for its own nameserver %s, so only the parent's glue points at it", prose.Name(name))
 		case !e.Match && !overlaps(e.Parent, e.Child):
-			sec.add(Fail, "the parent's glue for %s (%s) has no address in common with the zone's own records (%s)", prose(name), strings.Join(e.Parent, ", "), strings.Join(e.Child, ", "))
+			sec.add(Fail, "the parent's glue for %s (%s) has no address in common with the zone's own records (%s)", prose.Name(name), strings.Join(e.Parent, ", "), strings.Join(e.Child, ", "))
 		case !e.Match:
-			sec.add(Warn, "the parent's glue for %s (%s) differs from the zone's own records (%s)", prose(name), strings.Join(e.Parent, ", "), strings.Join(e.Child, ", "))
+			sec.add(Warn, "the parent's glue for %s (%s) differs from the zone's own records (%s)", prose.Name(name), strings.Join(e.Parent, ", "), strings.Join(e.Child, ", "))
 		}
 		sec.Entries = append(sec.Entries, e)
 	}
@@ -333,7 +329,7 @@ func (op *Op) checkGlue(ctx context.Context, apex string, ref *trace.Referral, s
 		sec.settle("no nameserver is inside the zone, so no glue is needed")
 		return sec
 	}
-	sec.settle(fmt.Sprintf("the parent's glue matches the zone's own records for %d nameserver%s", inside, plural(inside)))
+	sec.settle(fmt.Sprintf("the parent's glue matches the zone's own records for %d nameserver%s", inside, prose.Plural(inside)))
 	return sec
 }
 
@@ -357,8 +353,6 @@ func overlaps(a, b []string) bool {
 	}
 	return false
 }
-
-// --- DNSSEC ------------------------------------------------------------------
 
 func checkDNSSEC(tr *trace.Result, ref *trace.Referral, servers []Server, apex string) DNSSEC {
 	sec := DNSSEC{DS: ref.DS}
@@ -406,7 +400,7 @@ func checkDNSSEC(tr *trace.Result, ref *trace.Referral, servers []Server, apex s
 			}
 		}
 	}
-	sec.settle("the chain of trust validates from the root to " + prose(apex))
+	sec.settle("the chain of trust validates from the root to " + prose.Name(apex))
 	return sec
 }
 
@@ -436,41 +430,35 @@ func dsHygiene(sec *DNSSEC) {
 	sha1Only := true
 	weakAlg := map[uint8]bool{}
 	for _, rec := range sec.DS {
-		rr, err := dns.NewRR(rec.Name + " 300 IN DS " + rec.Rdata)
-		if err != nil {
-			continue
-		}
-		ds := rr.(*dns.DS)
-		if ds.DigestType != dns.SHA1 {
+		algorithm, _ := rec.Fields["algorithm"].(uint8)
+		if digest, _ := rec.Fields["digest_type"].(uint8); digest != dns.SHA1 {
 			sha1Only = false
 		}
-		switch ds.Algorithm {
+		switch algorithm {
 		case dns.RSAMD5, dns.DSA, dns.DSANSEC3SHA1, dns.ECCGOST, dns.RSASHA1, dns.RSASHA1NSEC3SHA1:
-			weakAlg[ds.Algorithm] = true
+			weakAlg[algorithm] = true
 		}
 	}
 	if sha1Only {
 		sec.add(Warn, "every DS record uses a SHA-1 digest, which RFC 8624 retires. Publish a SHA-256 DS")
 	}
-	for a := range weakAlg {
+	for _, a := range slices.Sorted(maps.Keys(weakAlg)) {
 		sec.add(Warn, "the zone signs with %s, an algorithm RFC 8624 retires. ECDSAP256SHA256 or ED25519 are the usual choices", dns.AlgorithmToString[a])
 	}
 }
-
-// --- CAA ---------------------------------------------------------------------
 
 var caaTags = map[string]bool{"issue": true, "issuewild": true, "iodef": true, "issuemail": true, "issuevmc": true, "contactemail": true, "contactphone": true}
 
 // checkCAA finds the relevant CAA set by climbing from domain towards the
 // root (RFC 8659 §3), stopping below the root.
-func checkCAA(ctx context.Context, r *resolver, domain string) CAA {
+func checkCAA(ctx context.Context, r *resolve.Resolver, domain string) CAA {
 	sec := CAA{Records: []CAARecord{}}
 	labels := dns.SplitDomainName(domain)
 	for i := range labels {
 		name := strings.Join(labels[i:], ".") + "."
-		m, err := r.lookup(ctx, name, dns.TypeCAA)
+		m, err := r.Lookup(ctx, name, dns.TypeCAA)
 		if err != nil {
-			sec.add(Warn, "the CAA lookup for %s failed: %s", prose(name), err.Error())
+			sec.add(Warn, "the CAA lookup for %s failed: %s", prose.Name(name), err.Error())
 			sec.settle("")
 			return sec
 		}
@@ -479,7 +467,7 @@ func checkCAA(ctx context.Context, r *resolver, domain string) CAA {
 			if m.Rcode == dns.RcodeServerFailure {
 				hint = " (a validating resolver answers SERVFAIL when the zone's DNSSEC is broken)"
 			}
-			sec.add(Warn, "the CAA lookup for %s returned %s, so CAs may refuse to issue%s", prose(name), dns.RcodeToString[m.Rcode], hint)
+			sec.add(Warn, "the CAA lookup for %s returned %s, so CAs may refuse to issue%s", prose.Name(name), dns.RcodeToString[m.Rcode], hint)
 			sec.settle("")
 			return sec
 		}
@@ -494,7 +482,7 @@ func checkCAA(ctx context.Context, r *resolver, domain string) CAA {
 		}
 	}
 	if len(sec.Records) == 0 {
-		sec.add(Info, "no CAA record at %s or above it, so any certificate authority may issue for it", prose(domain))
+		sec.add(Info, "no CAA record at %s or above it, so any certificate authority may issue for it", prose.Name(domain))
 		sec.settle("")
 		return sec
 	}
@@ -518,7 +506,7 @@ func checkCAA(ctx context.Context, r *resolver, domain string) CAA {
 			}
 		}
 	}
-	where := "CAA at " + prose(sec.FoundAt)
+	where := "CAA at " + prose.Name(sec.FoundAt)
 	var okMsg string
 	switch {
 	case issueSeen && len(issue) == 0:

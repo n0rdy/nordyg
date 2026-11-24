@@ -1,12 +1,16 @@
 package export
 
 import (
+	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
 
+	"github.com/miekg/dns"
+
 	"github.com/n0rdy/nordyg/core/internal/bridge"
 	"github.com/n0rdy/nordyg/core/internal/contract"
+	"github.com/n0rdy/nordyg/core/internal/testdns"
 )
 
 func ptr(b bool) *bool { return &b }
@@ -44,7 +48,7 @@ func TestDig(t *testing.T) {
 		}
 	}
 	_, err := Command(Params{Question: q, Endpoint: contract.Endpoint{Transport: "doq", Address: "94.140.14.14:853", TLSName: "dns.adguard-dns.com"}, Format: "dig"})
-	if code(err) != contract.CodeExportUnsupported {
+	if testdns.Code(err) != contract.CodeExportUnsupported {
 		t.Fatalf("doq via dig: %v", err)
 	}
 }
@@ -58,7 +62,7 @@ func TestNslookup(t *testing.T) {
 		t.Fatal(got)
 	}
 	_, err := Command(Params{Question: q, Endpoint: contract.Endpoint{Transport: "dot", Address: "9.9.9.9:853", TLSName: "dns.quad9.net"}, Format: "nslookup"})
-	if code(err) != contract.CodeExportUnsupported {
+	if testdns.Code(err) != contract.CodeExportUnsupported {
 		t.Fatal(err)
 	}
 }
@@ -92,35 +96,34 @@ func TestCurl(t *testing.T) {
 	if !strings.HasPrefix(got, "curl -s -H 'accept: application/dns-message' --resolve cloudflare-dns.com:443:1.1.1.1 'https://cloudflare-dns.com/dns-query?dns=") || !strings.HasSuffix(got, " -o dns-response.bin") {
 		t.Fatal(got)
 	}
-	// The dns parameter must be stable for the same question and options.
-	if again := run(t, Params{Question: q, Endpoint: contract.Endpoint{Transport: "doh", URL: "https://cloudflare-dns.com/dns-query", Address: "1.1.1.1:443"}, Format: "curl"}); again != got {
-		t.Fatal("curl export is not deterministic")
+	// The dns parameter is the question on the wire, with id 0 so caches can
+	// share the answer (RFC 8484 §4.1).
+	_, param, _ := strings.Cut(strings.TrimSuffix(got, "' -o dns-response.bin"), "?dns=")
+	wire, err := base64.RawURLEncoding.DecodeString(param)
+	if err != nil {
+		t.Fatalf("dns parameter %q: %v", param, err)
 	}
-	_, err := Command(Params{Question: q, Endpoint: contract.Endpoint{Transport: "udp", Address: "1.1.1.1:53"}, Format: "curl"})
-	if code(err) != contract.CodeExportUnsupported {
+	sent := new(dns.Msg)
+	if err := sent.Unpack(wire); err != nil {
+		t.Fatal(err)
+	}
+	if sent.Id != 0 || len(sent.Question) != 1 || sent.Question[0].Name != "example.com." || sent.Question[0].Qtype != dns.TypeA || !sent.RecursionDesired {
+		t.Fatalf("query in the URL: %v", sent)
+	}
+	_, err = Command(Params{Question: q, Endpoint: contract.Endpoint{Transport: "udp", Address: "1.1.1.1:53"}, Format: "curl"})
+	if testdns.Code(err) != contract.CodeExportUnsupported {
 		t.Fatal(err)
 	}
 }
 
 func TestBadFormatAndQuoting(t *testing.T) {
 	_, err := Command(Params{Question: contract.Question{Name: "x", Type: "A"}, Endpoint: contract.Endpoint{Transport: "udp", Address: "1.1.1.1:53"}, Format: "xlsx"})
-	if code(err) != bridge.CodeBadRequest {
+	if testdns.Code(err) != bridge.CodeBadRequest {
 		t.Fatal(err)
 	}
 	if quote("it's") != `'it'\''s'` || quote("plain") != "plain" || quote("a b") != "'a b'" {
 		t.Fatal("quoting")
 	}
-}
-
-func code(err error) string {
-	var e *bridge.Error
-	if errors.As(err, &e) {
-		return e.Code
-	}
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 func TestTraceExport(t *testing.T) {

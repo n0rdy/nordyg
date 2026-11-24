@@ -164,22 +164,8 @@ final class WatchCenter: ObservableObject {
 }
 
 enum WatchStore {
-    static var url: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = base.appendingPathComponent("Nordyg", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("watches.json")
-    }
+    private static let url = SavedList.file("watches.json")
 
-    static func load() -> [Watch] {
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
-        return SavedList.load(url, decoder: d)
-    }
-
-    static func save(_ items: [Watch]) {
-        let e = JSONEncoder()
-        e.dateEncodingStrategy = .iso8601
-        if let data = try? e.encode(items) { try? data.write(to: url, options: .atomic) }
-    }
+    static func load() -> [Watch] { SavedList.load(url) }
+    static func save(_ items: [Watch]) { SavedList.save(items, to: url) }
 }

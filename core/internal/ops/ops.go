@@ -24,7 +24,7 @@ import (
 // Version is stamped by the Makefile via -ldflags. "dev" when built by hand.
 var Version = "dev"
 
-// ContractVersion is bumped only on a breaking change to context/contract.md.
+// ContractVersion is bumped only on a breaking change to the JSON contract.
 // Adding fields or ops is not breaking.
 const ContractVersion = 1
 

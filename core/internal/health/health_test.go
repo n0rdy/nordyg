@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,24 +31,6 @@ import (
 //	dead.test   ns.dead.test, silent
 //	signed.test like good.test but with a DS at the parent and unsigned servers
 
-func rr(t *testing.T, s string) dns.RR {
-	t.Helper()
-	r, err := dns.NewRR(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return r
-}
-
-func reply(q *dns.Msg) *dns.Msg {
-	m := new(dns.Msg)
-	m.SetReply(q)
-	if opt := q.IsEdns0(); opt != nil {
-		m.SetEdns0(1232, opt.Do())
-	}
-	return m
-}
-
 type authOpts struct {
 	apex      string
 	serial    uint32
@@ -60,18 +44,18 @@ type authOpts struct {
 
 func authServer(t *testing.T, o authOpts) testdns.Answer {
 	t.Helper()
-	soa := rr(t, o.apex+" 300 IN SOA ns1."+o.apex+" hostmaster."+o.apex+" "+itoa(o.serial)+" 7200 3600 1209600 300")
+	soa := testdns.RR(t, o.apex+" 300 IN SOA ns1."+o.apex+" hostmaster."+o.apex+" "+strconv.Itoa(int(o.serial))+" 7200 3600 1209600 300")
 	var extra []dns.RR
 	for _, s := range o.extra {
-		extra = append(extra, rr(t, s))
+		extra = append(extra, testdns.RR(t, s))
 	}
 	return func(q *dns.Msg) *dns.Msg {
-		m := reply(q)
+		m := testdns.Reply(q)
 		qq := q.Question[0]
 		name := strings.ToLower(qq.Name)
 		if qq.Qtype == dns.TypeAXFR {
 			if o.axfr {
-				m.Answer = []dns.RR{soa, rr(t, o.apex+" 300 IN NS "+o.ns[0]), soa}
+				m.Answer = []dns.RR{soa, testdns.RR(t, o.apex+" 300 IN NS "+o.ns[0]), soa}
 			} else {
 				m.Rcode = dns.RcodeRefused
 			}
@@ -80,7 +64,7 @@ func authServer(t *testing.T, o authOpts) testdns.Answer {
 		if name == "a.root-servers.net." {
 			if o.recursion && q.RecursionDesired {
 				m.RecursionAvailable = true
-				m.Answer = []dns.RR{rr(t, "a.root-servers.net. 300 IN A 198.41.0.4")}
+				m.Answer = []dns.RR{testdns.RR(t, "a.root-servers.net. 300 IN A 198.41.0.4")}
 			} else {
 				m.Rcode = dns.RcodeRefused
 			}
@@ -96,12 +80,12 @@ func authServer(t *testing.T, o authOpts) testdns.Answer {
 			m.Answer = []dns.RR{soa}
 		case name == o.apex && qq.Qtype == dns.TypeNS:
 			for _, n := range o.ns {
-				m.Answer = append(m.Answer, rr(t, o.apex+" 300 IN NS "+n))
+				m.Answer = append(m.Answer, testdns.RR(t, o.apex+" 300 IN NS "+n))
 			}
 		case qq.Qtype == dns.TypeA && o.addrs[name] != "":
-			m.Answer = []dns.RR{rr(t, name+" 300 IN A "+o.addrs[name])}
+			m.Answer = []dns.RR{testdns.RR(t, name+" 300 IN A "+o.addrs[name])}
 		case qq.Qtype == dns.TypeAAAA && o.aaaa[name] != "":
-			m.Answer = []dns.RR{rr(t, name+" 300 IN AAAA "+o.aaaa[name])}
+			m.Answer = []dns.RR{testdns.RR(t, name+" 300 IN AAAA "+o.aaaa[name])}
 		default:
 			for _, e := range extra {
 				if strings.EqualFold(e.Header().Name, name) && e.Header().Rrtype == qq.Qtype {
@@ -123,11 +107,6 @@ func authServer(t *testing.T, o authOpts) testdns.Answer {
 	}
 }
 
-func itoa(n uint32) string {
-	b, _ := json.Marshal(n)
-	return string(b)
-}
-
 type fixture struct {
 	op       *Op
 	root     string
@@ -139,28 +118,28 @@ func setup(t *testing.T, validator trace.Validator) *fixture {
 	t.Helper()
 	ports := map[string]string{}
 	root := testdns.UDPTCP(t, func(q *dns.Msg) *dns.Msg {
-		m := reply(q)
-		m.Ns = []dns.RR{rr(t, "test. 300 IN NS ns.test.")}
-		m.Extra = []dns.RR{rr(t, "ns.test. 300 IN A 192.0.2.2")}
+		m := testdns.Reply(q)
+		m.Ns = []dns.RR{testdns.RR(t, "test. 300 IN NS ns.test.")}
+		m.Extra = []dns.RR{testdns.RR(t, "ns.test. 300 IN A 192.0.2.2")}
 		return m
 	})
 	delegate := func(m *dns.Msg, zone string, glue map[string]string, ns ...string) {
 		for _, n := range ns {
-			m.Ns = append(m.Ns, rr(t, zone+" 300 IN NS "+n))
+			m.Ns = append(m.Ns, testdns.RR(t, zone+" 300 IN NS "+n))
 			if ip := glue[n]; ip != "" {
-				m.Extra = append(m.Extra, rr(t, n+" 300 IN A "+ip))
+				m.Extra = append(m.Extra, testdns.RR(t, n+" 300 IN A "+ip))
 			}
 		}
 	}
 	// cohost.test is served by the .test server itself, like nic.cz by .cz.
 	cohost := authServer(t, authOpts{apex: "cohost.test.", serial: 5, ns: []string{"ns.test."}})
 	tld := testdns.UDPTCP(t, func(q *dns.Msg) *dns.Msg {
-		m := reply(q)
+		m := testdns.Reply(q)
 		name := strings.ToLower(q.Question[0].Name)
 		switch {
 		case dns.IsSubDomain("good.test.", name):
 			delegate(m, "good.test.", map[string]string{"ns1.good.test.": "192.0.2.11", "ns2.good.test.": "198.51.100.12"}, "ns1.good.test.", "ns2.good.test.")
-			m.Extra = append(m.Extra, rr(t, "ns2.good.test. 300 IN AAAA 2001:db8::12"))
+			m.Extra = append(m.Extra, testdns.RR(t, "ns2.good.test. 300 IN AAAA 2001:db8::12"))
 		case dns.IsSubDomain("bad.test.", name):
 			delegate(m, "bad.test.", map[string]string{"ns1.bad.test.": "192.0.2.21", "ns2.bad.test.": "192.0.2.22"}, "lame.other.test.", "ns1.bad.test.", "ns2.bad.test.")
 		case dns.IsSubDomain("noglue.test.", name):
@@ -169,16 +148,16 @@ func setup(t *testing.T, validator trace.Validator) *fixture {
 			delegate(m, "dead.test.", map[string]string{"ns.dead.test.": "192.0.2.41"}, "ns.dead.test.")
 		case name == "cohost.test." && q.Question[0].Qtype == dns.TypeDS:
 			m.Authoritative = true
-			m.Answer = []dns.RR{rr(t, "cohost.test. 300 IN DS 4242 13 2 ABCDEF0123")}
+			m.Answer = []dns.RR{testdns.RR(t, "cohost.test. 300 IN DS 4242 13 2 ABCDEF0123")}
 		case dns.IsSubDomain("cohost.test.", name):
 			return cohost(q)
 		case dns.IsSubDomain("signed.test.", name):
 			delegate(m, "signed.test.", map[string]string{"ns1.signed.test.": "192.0.2.51", "ns2.signed.test.": "198.51.100.52"}, "ns1.signed.test.", "ns2.signed.test.")
-			m.Ns = append(m.Ns, rr(t, "signed.test. 300 IN DS 12345 13 1 ABCDEF0123"))
+			m.Ns = append(m.Ns, testdns.RR(t, "signed.test. 300 IN DS 12345 13 1 ABCDEF0123"))
 		default:
 			m.Authoritative = true
 			m.Rcode = dns.RcodeNameError
-			m.Ns = []dns.RR{rr(t, "test. 300 IN SOA ns.test. n. 1 7200 3600 1209600 300")}
+			m.Ns = []dns.RR{testdns.RR(t, "test. 300 IN SOA ns.test. n. 1 7200 3600 1209600 300")}
 		}
 		return m
 	})
@@ -189,7 +168,7 @@ func setup(t *testing.T, validator trace.Validator) *fixture {
 		addrs: map[string]string{"ns1.bad.test.": "192.0.2.21", "ns2.bad.test.": "192.0.2.99"}})
 	bad2 := authServer(t, authOpts{apex: "bad.test.", serial: 1, recursion: true, ns: []string{"lame.other.test.", "ns1.bad.test.", "ns2.bad.test."},
 		addrs: map[string]string{"ns1.bad.test.": "192.0.2.21", "ns2.bad.test.": "192.0.2.99"}})
-	refused := func(q *dns.Msg) *dns.Msg { m := reply(q); m.Rcode = dns.RcodeRefused; return m }
+	refused := func(q *dns.Msg) *dns.Msg { m := testdns.Reply(q); m.Rcode = dns.RcodeRefused; return m }
 	noglue := authServer(t, authOpts{apex: "noglue.test.", serial: 3, ns: []string{"ns.noglue.test."},
 		addrs: map[string]string{"ns.noglue.test.": "192.0.2.31"}})
 	signed := authServer(t, authOpts{apex: "signed.test.", serial: 9, ns: []string{"ns1.signed.test.", "ns2.signed.test."},
@@ -278,6 +257,7 @@ func dump(t *testing.T, r *Result) string {
 func TestHealthyZone(t *testing.T) {
 	f := setup(t, nil)
 	r := f.run(t, "good.test")
+	testdns.Sample(t, "health", r)
 	if r.Zone != "good.test." || r.Delegation.Parent != "test." {
 		t.Fatalf("zone %s parent %s", r.Zone, r.Delegation.Parent)
 	}
@@ -316,6 +296,7 @@ func TestHealthyZone(t *testing.T) {
 func TestBrokenZone(t *testing.T) {
 	f := setup(t, nil)
 	r := f.run(t, "bad.test.")
+	testdns.Sample(t, "health-broken", r)
 	checks := []struct {
 		name   string
 		sec    Section
@@ -373,7 +354,7 @@ func TestDeadDelegation(t *testing.T) {
 	if r.Zone != "dead.test." || len(r.Delegation.ParentNS) != 1 {
 		t.Fatalf("%s", dump(t, r))
 	}
-	if !has(r.Delegation.Section, Fail, "trace") && !has(r.Delegation.Section, Fail, "no nameserver answers") {
+	if !has(r.Delegation.Section, Fail, "SOA failed after the delegation: every nameserver for dead.test. failed") || !has(r.Delegation.Section, Fail, "no nameserver answers") {
 		t.Fatalf("delegation: %+v", r.Delegation.Findings)
 	}
 	if !has(r.Nameservers.Section, Fail, "ns.dead.test (192.0.2.41) does not answer") {
@@ -441,32 +422,42 @@ func TestBadRequests(t *testing.T) {
 	for _, d := range []string{"", ".", "bad..name"} {
 		_, err := f.op.Run(context.Background(), Params{Domain: d, Endpoint: contract.Endpoint{Transport: "udp", Address: f.resolver}})
 		var be *bridge.Error
-		if !asBridge(err, &be) || be.Code != bridge.CodeBadRequest {
+		if !errors.As(err, &be) || be.Code != bridge.CodeBadRequest {
 			t.Errorf("%q: %v", d, err)
 		}
 	}
 }
 
-func asBridge(err error, be **bridge.Error) bool {
-	b, ok := err.(*bridge.Error)
-	if ok {
-		*be = b
+func TestNameserverWithoutAddress(t *testing.T) {
+	op := &Op{}
+	servers := op.probeAll(context.Background(), "x.test.",
+		map[string][]string{"gone.x.test.": nil, "unknown.x.test.": nil},
+		map[string]error{"unknown.x.test.": errors.New("SERVFAIL")}, contract.Options{}.Resolve())
+	sec := checkServers(servers)
+	// No address is the zone's problem. A lookup that failed is not.
+	if !has(sec.Section, Fail, "gone.x.test has no A or AAAA records") {
+		t.Errorf("no address: %+v", sec.Findings)
 	}
-	return ok
+	if !has(sec.Section, Warn, "unknown.x.test could not be checked, because its address lookup failed") || has(sec.Section, Fail, "unknown.x.test") {
+		t.Errorf("failed lookup: %+v", sec.Findings)
+	}
 }
 
 func TestCancel(t *testing.T) {
 	f := setup(t, nil)
+	// dead.test has a nameserver that never answers, so the run is still
+	// probing when the cancel lands.
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := f.op.Run(ctx, Params{Domain: "good.test", Endpoint: contract.Endpoint{Transport: "udp", Address: f.resolver}, RootHints: []string{f.root}})
-	if err == nil {
-		t.Fatal("expected an error on a cancelled context")
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := f.op.Run(ctx, Params{Domain: "dead.test", Endpoint: contract.Endpoint{Transport: "udp", Address: f.resolver}, RootHints: []string{f.root}})
+	if !errors.Is(err, context.Canceled) || time.Since(start) > 2*time.Second {
+		t.Fatalf("want context.Canceled soon after the cancel, got %v after %s", err, time.Since(start))
 	}
 }
 
 func TestSOATimers(t *testing.T) {
-	soa := rr(t, "x. 300 IN SOA ns.x. h.x. 1 3600 7200 86400 172800").(*dns.SOA)
+	soa := testdns.RR(t, "x. 300 IN SOA ns.x. h.x. 1 3600 7200 86400 172800").(*dns.SOA)
 	serial := uint32(1)
 	r := checkSOA([]Server{{Name: "ns.x.", IP: "192.0.2.1", Authoritative: true, Serial: &serial, soa: soa}}, "x.")
 	for _, want := range []string{"retry (2 h) should be shorter than refresh (1 h)", "expire is 1 d", "cached for 2 d"} {
@@ -492,7 +483,7 @@ func TestCohostedParent(t *testing.T) {
 
 func TestSerialsByProvider(t *testing.T) {
 	one, two := uint32(1), uint32(2)
-	soa := rr(t, "x. 300 IN SOA ns.x. h.x. 1 7200 3600 1209600 300").(*dns.SOA)
+	soa := testdns.RR(t, "x. 300 IN SOA ns.x. h.x. 1 7200 3600 1209600 300").(*dns.SOA)
 	multi := checkSOA([]Server{
 		{Name: "dns1.p08.nsone.net.", IP: "192.0.2.1", Authoritative: true, Serial: &one, soa: soa},
 		{Name: "ns-1.awsdns-01.net.", IP: "192.0.2.2", Authoritative: true, Serial: &two, soa: soa},

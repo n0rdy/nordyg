@@ -58,8 +58,8 @@ func (in *Inspector) HandshakeSMTP(ctx context.Context, addr, sni string) (*tls.
 	}
 	cfg := &tls.Config{
 		ServerName:         sni,
-		InsecureSkipVerify: true, // DANE matches the chain against TLSA records, not a trust store
-		MinVersion:         tls.VersionTLS10,
+		InsecureSkipVerify: true,             // DANE matches the chain against TLSA records, not a trust store
+		MinVersion:         tls.VersionTLS10, // an old server is something to report, not a reason to see nothing
 	}
 	if err := c.StartTLS(cfg); err != nil {
 		return nil, err

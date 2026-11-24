@@ -38,15 +38,27 @@ type zone struct {
 type zoneOpt func(*zone)
 
 func withNSEC3(optout bool) zoneOpt { return func(z *zone) { z.nsec3, z.optout = true, optout } }
-func unsigned() zoneOpt             { return func(z *zone) { z.signed = false } }
+
+func unsigned() zoneOpt { return func(z *zone) { z.signed = false } }
+
 func expired() zoneOpt {
 	return func(z *zone) {
 		z.inception = time.Now().Add(-48 * time.Hour)
 		z.expiration = time.Now().Add(-24 * time.Hour)
 	}
 }
-func corrupt() zoneOpt  { return func(z *zone) { z.corruptSig = true } }
+
+func notYetValid() zoneOpt {
+	return func(z *zone) {
+		z.inception = time.Now().Add(24 * time.Hour)
+		z.expiration = time.Now().Add(48 * time.Hour)
+	}
+}
+
+func corrupt() zoneOpt { return func(z *zone) { z.corruptSig = true } }
+
 func stripped() zoneOpt { return func(z *zone) { z.stripSigs = true } }
+
 func rsaKeys() zoneOpt {
 	return func(z *zone) { z.ksk.Algorithm, z.zsk.Algorithm = dns.RSASHA256, dns.RSASHA256 }
 }
@@ -132,6 +144,16 @@ func (z *zone) delegate(child *zone, publishDS bool) {
 		ds.Hdr.Ttl = 300
 		z.addRR(ds)
 	}
+}
+
+// delegateUnsupportedDS publishes the child's DS under an algorithm the
+// validator does not implement.
+func (z *zone) delegateUnsupportedDS(child *zone) {
+	z.delegate(child, false)
+	ds := child.ksk.ToDS(dns.SHA256)
+	ds.Hdr.Ttl = 300
+	ds.Algorithm = dns.ED448
+	z.addRR(ds)
 }
 
 // delegateBogusDS publishes a DS that matches no key of the child.
@@ -295,8 +317,6 @@ func (z *zone) buildNSEC3(names []string) {
 		z.addRR(n)
 	}
 }
-
-// --- serving ---------------------------------------------------------------
 
 func (z *zone) rrsWithSigs(name string, typ uint16) []dns.RR {
 	out := append([]dns.RR{}, z.rrsets[name][typ]...)

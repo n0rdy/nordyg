@@ -9,79 +9,76 @@ struct QueryBar: View {
     @FocusState private var nameFocused: Bool
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                HStack(spacing: 0) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary).padding(.leading, 10).padding(.trailing, 6)
-                    TextField(placeholder, text: $model.name)
-                        .textFieldStyle(.plain)
-                        .font(.system(.title3, design: .monospaced))
-                        .focused($nameFocused)
-                        .onSubmit { model.run() }
-                    if !model.mode.takesDomain {
-                        Token {
-                            Picker("Type", selection: $model.type) {
-                                // ALL fans out per type; times several resolvers it
-                                // would explode, so it is a one-resolver choice.
-                                ForEach(model.mode == .query && model.severalResolvers ? RecordTypes.all.filter { $0 != "ALL" } : RecordTypes.all, id: \.self) { Text($0).tag($0) }
-                            }
-                            .pickerStyle(.inline)
-                        } label: {
-                            Text(model.type).font(.system(.callout, design: .monospaced).weight(.bold)).foregroundStyle(TypeStyle.ink(model.type))
+        HStack(spacing: 10) {
+            HStack(spacing: 0) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary).padding(.leading, 10).padding(.trailing, 6)
+                TextField(placeholder, text: $model.name)
+                    .textFieldStyle(.plain)
+                    .font(.system(.title3, design: .monospaced))
+                    .focused($nameFocused)
+                    .onSubmit { model.run() }
+                if !model.mode.takesDomain {
+                    Token {
+                        Picker("Type", selection: $model.type) {
+                            // ALL fans out per type; times several resolvers it
+                            // would explode, so it is a one-resolver choice.
+                            ForEach(model.mode == .query && model.severalResolvers ? RecordTypes.all.filter { $0 != "ALL" } : RecordTypes.all, id: \.self) { Text($0).tag($0) }
                         }
+                        .pickerStyle(.inline)
+                    } label: {
+                        Text(model.type).font(.system(.callout, design: .monospaced).weight(.bold)).foregroundStyle(TypeStyle.ink(model.type))
                     }
-                    if model.mode == .query && model.severalResolvers {
-                        CompareEndpointPicker(open: $model.showResolverChecklist, addResolver: { showCustom = true })
-                    } else if model.mode.usesResolver {
-                        Token {
-                            // First in the menu: the list below is long, and an
-                            // option at its end goes unseen.
-                            if model.mode == .query {
-                                Button {
-                                    model.severalResolvers = true
-                                    // Open the checklist once the token has swapped in.
-                                    DispatchQueue.main.async { model.showResolverChecklist = true }
-                                } label: {
-                                    Label("Several resolvers…", systemImage: "checklist")
-                                }
-                                Divider()
+                }
+                if model.mode == .query && model.severalResolvers {
+                    CompareEndpointPicker(open: $model.showResolverChecklist, addResolver: { showCustom = true })
+                } else if model.mode.usesResolver {
+                    Token {
+                        // First in the menu: the list below is long, and an
+                        // option at its end goes unseen.
+                        if model.mode == .query {
+                            Button {
+                                model.severalResolvers = true
+                                // Open the checklist once the token has swapped in.
+                                DispatchQueue.main.async { model.showResolverChecklist = true }
+                            } label: {
+                                Label("Several resolvers…", systemImage: "checklist")
                             }
-                            EndpointPickerItems(selection: $model.selected)
                             Divider()
-                            Button("Add resolver…") { showCustom = true }
-                            if !model.customEndpoints.isEmpty {
-                                Menu("Remove custom resolver") {
-                                    ForEach(model.customEndpoints) { ep in Button(ep.title) { model.removeCustom(ep) } }
-                                }
-                            }
-                        } label: {
-                            Label(model.selected?.title ?? "resolver", systemImage: "server.rack").font(.callout).lineLimit(1)
                         }
-                    } else {
-                        Text("root → authoritative").font(.callout).foregroundStyle(.secondary).padding(.horizontal, 10)
+                        EndpointPickerItems(selection: $model.selected)
+                        Divider()
+                        Button("Add resolver…") { showCustom = true }
+                        if !model.customEndpoints.isEmpty {
+                            Menu("Remove custom resolver") {
+                                ForEach(model.customEndpoints) { ep in Button(ep.title) { model.removeCustom(ep) } }
+                            }
+                        }
+                    } label: {
+                        Label(model.selected?.title ?? "resolver", systemImage: "server.rack").font(.callout).lineLimit(1)
                     }
-                }
-                .frame(height: 40)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .textBackgroundColor)))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(nameFocused ? Color.accentColor.opacity(0.7) : Color.secondary.opacity(0.25), lineWidth: nameFocused ? 1.5 : 1))
-
-                OptionsButton(options: $model.options, validate: $model.validate,
-                              showsValidate: model.mode == .query || model.mode == .trace)
-
-                if model.isRunning {
-                    // A plain button: red means "failed" in the results.
-                    // Run and Cancel share a size so the bar does not jump.
-                    Button { model.cancel() } label: { Label("Cancel", systemImage: "stop.fill").font(.title3).frame(minWidth: 84) }
-                        .controlSize(.extraLarge)
                 } else {
-                    // As tall as the field, with its text size.
-                    Button { model.run() } label: { Label("Run", systemImage: "play.fill").font(.title3.weight(.semibold)).frame(minWidth: 84) }
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(!model.canRun)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.extraLarge)
-                        // The accent (the logo's azure): green means "ok/secure" in results.
+                    Text("root → authoritative").font(.callout).foregroundStyle(.secondary).padding(.horizontal, 10)
                 }
+            }
+            .frame(height: 40)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(nameFocused ? Color.accentColor.opacity(0.7) : Color.secondary.opacity(0.25), lineWidth: nameFocused ? 1.5 : 1))
+
+            OptionsButton(options: $model.options, validate: $model.validate,
+                          showsValidate: model.mode == .query || model.mode == .trace)
+
+            if model.isRunning {
+                // A plain button: red means "failed" in the results.
+                // Run and Cancel share a size so the bar does not jump.
+                Button { model.cancel() } label: { Label("Cancel", systemImage: "stop.fill").font(.title3).frame(minWidth: 84) }
+                    .controlSize(.extraLarge)
+            } else {
+                // As tall as the field, with its text size.
+                Button { model.run() } label: { Label("Run", systemImage: "play.fill").font(.title3.weight(.semibold)).frame(minWidth: 84) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!model.canRun)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.extraLarge)
             }
         }
         .padding(12)
@@ -112,7 +109,14 @@ struct Token<Content: View, L: View>: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .padding(.horizontal, 8).padding(.vertical, 4)
+            .tokenChrome()
+    }
+}
+
+private extension View {
+    /// The rounded tile a token sits in, with the gap to the next one.
+    func tokenChrome() -> some View {
+        padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.secondary.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .padding(.trailing, 6)
@@ -137,7 +141,7 @@ struct EndpointPickerItems: View {
         }
         Section("Public resolvers") {
             ForEach(model.presetsNeedingSetup) { p in
-                Button("\(p.name)… (needs your \(PresetFields.label((p.requires ?? [""])[0]).lowercased()))") { model.setupPreset = p.id }
+                Button("\(p.name)… (needs your \(PresetFields.label(p.requires?.first ?? "").lowercased()))") { model.setupPreset = p.id }
             }
             ForEach(model.providers) { p in
                 Menu {
@@ -189,47 +193,43 @@ struct CompareEndpointPicker: View {
             Label { Text(verbatim: "\(model.compareSelection.count) resolvers") } icon: { Image(systemName: "checklist") }.font(.callout)
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 8).padding(.vertical, 4)
-        .background(Color.secondary.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .padding(.trailing, 6)
+        .tokenChrome()
         .popover(isPresented: $open) {
             VStack(spacing: 0) {
-            // The way back sits in a header that never scrolls away.
-            HStack {
-                Text("Ask these resolvers").font(.headline)
-                Spacer()
-                Button("Ask one resolver") { open = false; model.severalResolvers = false }
-            }
-            .padding(12)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
-                    if !model.systemEndpoints.isEmpty {
-                        Text("This Mac").font(.caption).foregroundStyle(.secondary)
-                        ForEach(model.systemEndpoints) { ep in EndpointCheckbox(endpoint: ep) }
-                    }
-                    Text("Public resolvers").font(.caption).foregroundStyle(.secondary).padding(.top, 6)
-                    ForEach(model.providers) { p in ProviderChecklistRow(provider: p) }
-                    if !model.customEndpoints.isEmpty {
-                        Text("Custom").font(.caption).foregroundStyle(.secondary).padding(.top, 6)
-                        ForEach(model.customEndpoints) { ep in EndpointCheckbox(endpoint: ep) }
-                    }
+                // The way back sits in a header that never scrolls away.
+                HStack {
+                    Text("Ask these resolvers").font(.headline)
+                    Spacer()
+                    Button("Ask one resolver") { open = false; model.severalResolvers = false }
                 }
                 .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Divider()
-            HStack {
-                Button("Add resolver…") { open = false; addResolver() }
-                Spacer()
-            }
-            .padding(12)
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if !model.systemEndpoints.isEmpty {
+                            Text("This Mac").font(.caption).foregroundStyle(.secondary)
+                            ForEach(model.systemEndpoints) { ep in EndpointCheckbox(endpoint: ep) }
+                        }
+                        Text("Public resolvers").font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                        ForEach(model.providers) { p in ProviderChecklistRow(provider: p) }
+                        if !model.customEndpoints.isEmpty {
+                            Text("Custom").font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                            ForEach(model.customEndpoints) { ep in EndpointCheckbox(endpoint: ep) }
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Divider()
+                HStack {
+                    Button("Add resolver…") { open = false; addResolver() }
+                    Spacer()
+                }
+                .padding(12)
             }
             .frame(width: 340, height: 440)
         }
     }
-
 }
 
 /// The query options button. It stays quiet at the defaults and says how
@@ -276,8 +276,12 @@ struct OptionsView: View {
             Toggle("TCP fallback on truncation", isOn: bind(\.tcpFallback, true))
             Toggle("Request NSID", isOn: bind(\.nsid, false))
             Toggle("Send cookie", isOn: bind(\.cookie, false))
-            Stepper("UDP size: \(options.udpSize ?? 1232)", value: Binding(get: { options.udpSize ?? 1232 }, set: { options.udpSize = $0 }), in: 512...4096, step: 256)
-            Stepper("Timeout: \(options.timeoutMs ?? 5000) ms", value: Binding(get: { options.timeoutMs ?? 5000 }, set: { options.timeoutMs = $0 }), in: 500...30000, step: 500)
+            Stepper(value: Binding(get: { options.udpSize ?? 1232 }, set: { options.udpSize = $0 }), in: 512...4096, step: 256) {
+                Text(verbatim: "UDP size: \(options.udpSize ?? 1232)")
+            }
+            Stepper(value: Binding(get: { options.timeoutMs ?? 5000 }, set: { options.timeoutMs = $0 }), in: 500...30000, step: 500) {
+                Text(verbatim: "Timeout: \(options.timeoutMs ?? 5000) ms")
+            }
             if !options.changed.isEmpty || (showsValidate && !validate) {
                 Button("Reset to defaults") { options = Options(); validate = true }
             }

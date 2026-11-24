@@ -134,11 +134,11 @@ func fields(rr dns.RR) map[string]any {
 	case *dns.CAA:
 		return f{"flags": r.Flag, "tag": r.Tag, "value": r.Value}
 	case *dns.DS:
-		return f{"key_tag": r.KeyTag, "algorithm": r.Algorithm, "algorithm_name": algName(r.Algorithm), "digest_type": r.DigestType, "digest_type_name": digestName(r.DigestType), "digest": strings.ToLower(r.Digest)}
+		return f{"key_tag": r.KeyTag, "algorithm": r.Algorithm, "algorithm_name": AlgName(r.Algorithm), "digest_type": r.DigestType, "digest_type_name": digestName(r.DigestType), "digest": strings.ToLower(r.Digest)}
 	case *dns.DNSKEY:
-		return f{"flags": r.Flags, "protocol": r.Protocol, "algorithm": r.Algorithm, "algorithm_name": algName(r.Algorithm), "public_key": r.PublicKey, "key_tag": r.KeyTag(), "role": keyRole(r.Flags), "bits": keyBits(r)}
+		return f{"flags": r.Flags, "protocol": r.Protocol, "algorithm": r.Algorithm, "algorithm_name": AlgName(r.Algorithm), "public_key": r.PublicKey, "key_tag": r.KeyTag(), "role": KeyRole(r.Flags), "bits": keyBits(r)}
 	case *dns.RRSIG:
-		return f{"type_covered": contract.TypeToString(r.TypeCovered), "algorithm": r.Algorithm, "algorithm_name": algName(r.Algorithm), "labels": r.Labels, "original_ttl": r.OrigTtl, "expiration": SerialTime(r.Expiration), "inception": SerialTime(r.Inception), "key_tag": r.KeyTag, "signer": r.SignerName, "signature": r.Signature}
+		return f{"type_covered": contract.TypeToString(r.TypeCovered), "algorithm": r.Algorithm, "algorithm_name": AlgName(r.Algorithm), "labels": r.Labels, "original_ttl": r.OrigTtl, "expiration": SerialTime(r.Expiration), "inception": SerialTime(r.Inception), "key_tag": r.KeyTag, "signer": r.SignerName, "signature": r.Signature}
 	case *dns.NSEC:
 		return f{"next": r.NextDomain, "types": typeNames(r.TypeBitMap)}
 	case *dns.NSEC3:
@@ -163,7 +163,8 @@ func fields(rr dns.RR) map[string]any {
 
 type f = map[string]any
 
-func algName(a uint8) string {
+// AlgName is the mnemonic of a DNSSEC algorithm number, or ALGn when it has none.
+func AlgName(a uint8) string {
 	if s, ok := dns.AlgorithmToString[a]; ok {
 		return s
 	}
@@ -177,7 +178,8 @@ func digestName(d uint8) string {
 	return "DIGEST" + strconv.Itoa(int(d))
 }
 
-func keyRole(flags uint16) string {
+// KeyRole reads a DNSKEY's flags as revoked, ksk, zsk or other.
+func KeyRole(flags uint16) string {
 	switch {
 	case flags&dns.REVOKE != 0:
 		return "revoked"
@@ -211,19 +213,16 @@ func rsaBits(b64 string) int {
 	if err != nil || len(raw) < 3 {
 		return 0
 	}
-	expLen := int(raw[0])
-	off := 1
+	// One length byte, or a zero byte followed by a two-byte length.
+	expLen, off := int(raw[0]), 1
 	if expLen == 0 {
-		if len(raw) < 3 {
-			return 0
-		}
-		expLen = int(binary.BigEndian.Uint16(raw[1:3]))
-		off = 3
+		expLen, off = int(binary.BigEndian.Uint16(raw[1:3])), 3
 	}
-	mod := raw[off+expLen:]
-	if len(mod) == 0 {
+	// The key comes from the network: a truncated one has no modulus.
+	if off+expLen >= len(raw) {
 		return 0
 	}
+	mod := raw[off+expLen:]
 	// Strip leading zero bytes, then count significant bits.
 	i := 0
 	for i < len(mod)-1 && mod[i] == 0 {
@@ -345,8 +344,7 @@ func convertOption(o dns.EDNS0) contract.EDNSOption {
 	case *dns.EDNS0_LOCAL:
 		out.Data = hex.EncodeToString(v.Data)
 	default:
-		// Anything else: render what miekg gives us; no raw bytes available.
-		out.Data = ""
+		// miekg exposes no raw bytes for the other options, so Data stays empty.
 	}
 	return out
 }

@@ -1,5 +1,6 @@
-// Package contract holds the JSON types shared by every op, mirroring
-// context/contract.md §2. Keep field names and semantics in sync with that file.
+// Package contract holds the JSON types shared by every op. The Swift app
+// mirrors them in app/Nordyg/Core/Contract.swift, so keep field names and
+// semantics in sync with that file.
 package contract
 
 import (
@@ -24,7 +25,7 @@ const (
 	DoQ = "doq"
 )
 
-// Op-level error codes (contract §9).
+// Op-level error codes.
 const (
 	CodeUnknownType       = "unknown_type"
 	CodeBadEndpoint       = "bad_endpoint"
@@ -47,7 +48,7 @@ func JoinHostPort(ip string, port int) string {
 	return net.JoinHostPort(ip, strconv.Itoa(port))
 }
 
-// Endpoint is where and how to send a query (§2.1).
+// Endpoint is where and how to send a query.
 type Endpoint struct {
 	Transport string `json:"transport"`
 	Address   string `json:"address,omitempty"`
@@ -104,7 +105,7 @@ func (e Endpoint) Validate() error {
 	return nil
 }
 
-// Question is what to ask (§2.2).
+// Question is what to ask.
 type Question struct {
 	Name  string `json:"name"`
 	Type  string `json:"type"`
@@ -185,7 +186,7 @@ func (q Question) Resolve() (Resolved, error) {
 	return Resolved{Name: dns.Fqdn(name), Type: t, Class: class}, nil
 }
 
-// Options are the per-query knobs (§2.3). Pointer bools distinguish "absent"
+// Options are the per-query knobs. Pointer bools distinguish "absent"
 // from "false" so the true-by-default ones work.
 type Options struct {
 	RecursionDesired *bool `json:"recursion_desired,omitempty"`
@@ -268,7 +269,7 @@ func (e Effective) Build(r Resolved) *dns.Msg {
 	return m
 }
 
-// Flags mirrors the header bits (§2.4).
+// Flags mirrors the header bits.
 type Flags struct {
 	QR bool `json:"qr"`
 	AA bool `json:"aa"`
@@ -325,7 +326,7 @@ type EDNS struct {
 	Options       []EDNSOption `json:"options"`
 }
 
-// Record is one resource record (§2.5).
+// Record is one resource record.
 type Record struct {
 	Name     string         `json:"name"`
 	Type     string         `json:"type"`
@@ -338,7 +339,7 @@ type Record struct {
 	Decoded  any            `json:"decoded,omitempty"`
 }
 
-// Message is a parsed DNS message (§2.4).
+// Message is a parsed DNS message.
 type Message struct {
 	ID         uint16     `json:"id"`
 	Opcode     string     `json:"opcode"`
@@ -363,7 +364,7 @@ type Certificate struct {
 	SHA256    string    `json:"sha256"`
 }
 
-// TLSInfo describes the TLS session of a dot/doh/doq exchange (§2.6).
+// TLSInfo describes the TLS session of a dot/doh/doq exchange.
 type TLSInfo struct {
 	Version     string       `json:"version"`
 	CipherSuite string       `json:"cipher_suite"`
@@ -380,7 +381,7 @@ type HTTPInfo struct {
 	ContentType string `json:"content_type"`
 }
 
-// Exchange is what happened on the wire for one message (§2.6).
+// Exchange is what happened on the wire for one message.
 type Exchange struct {
 	Endpoint       Endpoint  `json:"endpoint"`
 	Protocol       string    `json:"protocol"`

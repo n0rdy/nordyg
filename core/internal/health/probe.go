@@ -16,6 +16,7 @@ import (
 	"github.com/n0rdy/nordyg/core/internal/contract"
 	"github.com/n0rdy/nordyg/core/internal/msg"
 	"github.com/n0rdy/nordyg/core/internal/trace"
+	"github.com/n0rdy/nordyg/core/internal/transport"
 )
 
 // maxProbes bounds how many servers are probed at once.
@@ -34,7 +35,8 @@ func (op *Op) addr(ip string) string {
 
 // probeAll probes every (name, address) pair concurrently. A name without
 // addresses yields one entry with an error, so it shows up in the table.
-func (op *Op) probeAll(ctx context.Context, apex string, addrs map[string][]string, o contract.Effective) []Server {
+// lookupErrs holds the names whose address lookup failed.
+func (op *Op) probeAll(ctx context.Context, apex string, addrs map[string][]string, lookupErrs map[string]error, o contract.Effective) []Server {
 	names := make([]string, 0, len(addrs))
 	for n := range addrs {
 		names = append(names, n)
@@ -46,12 +48,16 @@ func (op *Op) probeAll(ctx context.Context, apex string, addrs map[string][]stri
 	sem := make(chan struct{}, maxProbes)
 	for _, name := range names {
 		if len(addrs[name]) == 0 {
-			out = append(out, Server{Name: name, NS: []string{}, AXFR: AXFRNotChecked, Error: "the name has no A or AAAA records", Problems: []Finding{}})
+			s := Server{Name: name, NS: []string{}, AXFR: AXFRNotChecked, Error: "the name has no A or AAAA records", Problems: []Finding{}}
+			if err := lookupErrs[name]; err != nil {
+				s.Error, s.unresolved = "the address lookup failed: "+err.Error(), true
+			}
+			out = append(out, s)
 			continue
 		}
 		for _, ip := range addrs[name] {
 			wg.Add(1)
-			go func(name, ip string) {
+			go func() {
 				defer wg.Done()
 				select {
 				case sem <- struct{}{}:
@@ -63,7 +69,7 @@ func (op *Op) probeAll(ctx context.Context, apex string, addrs map[string][]stri
 				mu.Lock()
 				out = append(out, s)
 				mu.Unlock()
-			}(name, ip)
+			}()
 		}
 	}
 	wg.Wait()
@@ -122,18 +128,9 @@ func (op *Op) probe(ctx context.Context, apex, name, ip string, o contract.Effec
 	return s
 }
 
-func (op *Op) exchange(ctx context.Context, transportName, addr, name string, t uint16, o contract.Effective) (*exchangeResult, error) {
+func (op *Op) exchange(ctx context.Context, transportName, addr, name string, t uint16, o contract.Effective) (*transport.Result, error) {
 	q := o.Build(contract.Resolved{Name: name, Type: t, Class: dns.ClassINET})
-	res, err := op.Client.Exchange(ctx, contract.Endpoint{Transport: transportName, Address: addr}, q, o, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &exchangeResult{Msg: res.Msg, Exchange: res.Exchange}, nil
-}
-
-type exchangeResult struct {
-	Msg      *dns.Msg
-	Exchange contract.Exchange
+	return op.Client.Exchange(ctx, contract.Endpoint{Transport: transportName, Address: addr}, q, o, nil)
 }
 
 func (op *Op) tcpWorks(ctx context.Context, addr, apex string, o contract.Effective) bool {

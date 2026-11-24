@@ -12,6 +12,13 @@ import SwiftUI
 ///     mode <query|compare|trace|email|registry|health>  (compare = Query with
 ///                          several resolvers)
 ///     several <on|off>     Query asks several resolvers
+///     example <index>      run that example from the mode's start panel
+///     custom <add|remove> <ip>  add or remove a custom UDP resolver
+///     preset <id> [value]  open a preset's setup sheet, or set its profile id
+///     unpreset <id>        forget a preset's saved values
+///     macdns <on|off>      the "how this Mac resolves names" sheet
+///     dumpdns              write the system resolver configuration, as read
+///                          in the sandbox, to <container tmp>/nordyg-dns.txt
 ///     checklist <on|off>   open the several-resolvers checklist
 ///     drill <index|none>   open a compared resolver's full answer
 ///     name <text>          set the input field
@@ -35,6 +42,9 @@ import SwiftUI
 ///     snapshot             write <container tmp>/nordyg-snapshot.png once idle
 ///     snapshot active      same, after bringing the window to the front, so
 ///                          accent colours show as in a focused window
+///     snapshot busy        capture mid-run instead of waiting, for progress UI
+///     snapshot drawn       AppKit's own drawing of the content view, which
+///                          renders glass as blank
 ///
 /// Release builds compile none of this.
 @MainActor
@@ -42,7 +52,7 @@ enum DebugHooks {
     static let name = Notification.Name("foo.n0rdy.nordyg.debug")
     static let selectRecord = Notification.Name("nordyg.debug.selectRecord")
     /// Read by CheckCard when it is created.
-    nonisolated(unsafe) static var openCards: String? = nil
+    static var openCards: String?
 
     static func install(model: AppModel) {
         DistributedNotificationCenter.default().addObserver(forName: name, object: nil, queue: .main) { note in
@@ -69,7 +79,7 @@ enum DebugHooks {
             // "custom add 192.0.2.53" / "custom remove 192.0.2.53": the real paths.
             let parts = arg.split(separator: " ").map(String.init)
             if parts.count == 2 {
-                let ep = Endpoint(transport: "udp", address: parts[1] + ":53", tlsName: nil, url: nil, method: nil, label: nil)
+                let ep = Endpoint(transport: "udp", address: parts[1] + ":53")
                 if parts[0] == "add" { model.addCustom(ep) } else { model.removeCustom(ep) }
             }
         case "preset":
@@ -105,7 +115,7 @@ enum DebugHooks {
             var set: Set<Endpoint> = []
             for term in arg.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces).lowercased() }) where !term.isEmpty {
                 if term == "unreachable" {
-                    let ep = Endpoint(transport: "udp", address: "192.0.2.1:53", tlsName: nil, url: nil, method: nil, label: "Unreachable test")
+                    let ep = Endpoint(transport: "udp", address: "192.0.2.1:53", label: "Unreachable test")
                     if !model.customEndpoints.contains(ep) { model.customEndpoints.append(ep) }
                     set.insert(ep)
                 } else if let ep = model.allEndpoints.first(where: { $0.title.lowercased().contains(term) || $0.summary.lowercased().contains(term) }) {

@@ -88,6 +88,7 @@ func TestGoodDomain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testdns.Sample(t, "email", res)
 	if res.Overall.Status != OK {
 		t.Fatalf("overall %+v\nmx %+v\nspf %+v\ndkim %+v\ndmarc %+v\nsts %+v\nbimi %+v\ndnsbl %+v", res.Overall, res.MX.Verdict, res.SPF.Verdict, res.DKIM.Verdict, res.DMARC.Verdict, res.MTASTS.Verdict, res.BIMI.Verdict, res.DNSBL.Verdict)
 	}
@@ -160,21 +161,42 @@ func TestBadDomain(t *testing.T) {
 }
 
 func TestSPFLookupLimit(t *testing.T) {
-	op, ep := newOp(t)
+	op, _ := newOp(t)
 	addr := testdns.UDP(t, testdns.Zone(t,
 		"many.test. 300 IN TXT \"v=spf1 include:a.test include:b.test include:c.test include:d.test include:e.test include:f.test include:g.test include:h.test include:i.test include:j.test include:k.test ~all\"",
+		"a.test. 300 IN TXT \"v=spf1 ip4:192.0.2.1 -all\"", "b.test. 300 IN TXT \"v=spf1 ip4:192.0.2.2 -all\"",
+		"c.test. 300 IN TXT \"v=spf1 ip4:192.0.2.3 -all\"", "d.test. 300 IN TXT \"v=spf1 ip4:192.0.2.4 -all\"",
+		"e.test. 300 IN TXT \"v=spf1 ip4:192.0.2.5 -all\"", "f.test. 300 IN TXT \"v=spf1 ip4:192.0.2.6 -all\"",
+		"g.test. 300 IN TXT \"v=spf1 ip4:192.0.2.7 -all\"", "h.test. 300 IN TXT \"v=spf1 ip4:192.0.2.8 -all\"",
+		"i.test. 300 IN TXT \"v=spf1 ip4:192.0.2.9 -all\"", "j.test. 300 IN TXT \"v=spf1 ip4:192.0.2.10 -all\"",
+		"k.test. 300 IN TXT \"v=spf1 ip4:192.0.2.11 -all\"",
 	))
-	_ = ep
 	res, err := op.Run(context.Background(), Params{Domain: "many.test", Endpoint: contract.Endpoint{Transport: "udp", Address: addr}, DKIMSelectors: []string{"x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Includes fail to resolve (NXDOMAIN): reported as fail on the first unresolved include.
-	if res.SPF.Verdict.Status != Fail || len(res.SPF.Includes) != 11 {
-		t.Fatalf("spf: %+v (%d includes)", res.SPF.Verdict, len(res.SPF.Includes))
+	// Every include resolves, so the only thing wrong is their number.
+	if res.SPF.Verdict.Status != Fail || !strings.Contains(res.SPF.Verdict.Message, "over the limit of 10") || res.SPF.TotalLookups != 11 {
+		t.Fatalf("spf: %+v (%d lookups)", res.SPF.Verdict, res.SPF.TotalLookups)
 	}
-	if res.SPF.TotalLookups != 11 {
-		t.Fatalf("total lookups %d", res.SPF.TotalLookups)
+}
+
+func TestFailedLookupsAreNotMissingRecords(t *testing.T) {
+	op, _ := newOp(t)
+	addr := testdns.UDP(t, func(q *dns.Msg) *dns.Msg {
+		m := new(dns.Msg)
+		return m.SetRcode(q, dns.RcodeServerFailure)
+	})
+	res, err := op.Run(context.Background(), Params{Domain: "broken.test", Endpoint: contract.Endpoint{Transport: "udp", Address: addr}, DKIMSelectors: []string{"x", "y"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A resolver that cannot answer says nothing about the domain's mail setup.
+	if v := res.MX.Verdict; v.Status != Fail || v.Message != "MX lookup failed: SERVFAIL" {
+		t.Errorf("mx: %+v", v)
+	}
+	if v := res.DKIM.Verdict; v.Status != Fail || v.Message != "TXT lookup failed: SERVFAIL" {
+		t.Errorf("dkim: %+v", v)
 	}
 }
 

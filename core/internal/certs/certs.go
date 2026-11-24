@@ -64,13 +64,12 @@ type Probe struct {
 // Certificates returns the parsed chain as served, leaf first.
 func (p *Probe) Certificates() []*x509.Certificate { return p.certs }
 
-// Inspector holds what inspection needs from outside: trust roots, the
-// clock, and how to fetch a CRL.
+// Inspector holds what inspection needs from outside: trust roots and how
+// to fetch a CRL.
 type Inspector struct {
 	// Roots are the trust anchors; nil means the system's (macOS's trust
 	// store and Go's distrust list).
 	Roots *x509.CertPool
-	Now   func() time.Time
 	// FetchCRL downloads a CRL. The bytes are verified here before use.
 	FetchCRL func(ctx context.Context, url string) ([]byte, error)
 	Timeout  time.Duration
@@ -84,13 +83,6 @@ type crlResult struct {
 	err error
 }
 
-func (in *Inspector) now() time.Time {
-	if in.Now != nil {
-		return in.Now()
-	}
-	return time.Now()
-}
-
 // Handshake connects to addr and completes a TLS handshake for sni without
 // verifying anything, so an invalid chain can still be inspected.
 func (in *Inspector) Handshake(ctx context.Context, addr, sni string) (*tls.ConnectionState, error) {
@@ -102,8 +94,8 @@ func (in *Inspector) Handshake(ctx context.Context, addr, sni string) (*tls.Conn
 		NetDialer: &net.Dialer{Timeout: timeout},
 		Config: &tls.Config{
 			ServerName:         sni,
-			InsecureSkipVerify: true, // verified in Inspect, against the right roots
-			MinVersion:         tls.VersionTLS10,
+			InsecureSkipVerify: true,             // verified in Inspect, against the right roots
+			MinVersion:         tls.VersionTLS10, // an old server is something to report, not a reason to see nothing
 		},
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -130,7 +122,7 @@ func (in *Inspector) Inspect(ctx context.Context, st *tls.ConnectionState, name 
 		p.Chain = append(p.Chain, summarize(c))
 	}
 	leaf := p.certs[0]
-	now := in.now()
+	now := time.Now()
 	p.ExpiresInDays = int(leaf.NotAfter.Sub(now).Hours() / 24)
 	p.NameMatch = leaf.VerifyHostname(strings.TrimSuffix(name, ".")) == nil
 

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,11 +30,11 @@ const registryJSON = `{
   "nameservers": [{"ldhName": "NS2.example.test"}, {"ldhName": "ns1.example.test"}],
   "secureDNS": {"delegationSigned": true, "dsData": [{"keyTag": 2371, "algorithm": 13, "digestType": 2, "digest": "abcdef"}]},
   "entities": [{
-    "handle": "1861", "roles": ["registrar"],
-    "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Porkbun LLC"]]],
-    "publicIds": [{"type": "IANA Registrar ID", "identifier": "1861"}],
-    "links": [{"rel": "about", "href": "https://porkbun.com"}],
-    "entities": [{"roles": ["abuse"], "vcardArray": ["vcard", [["fn", {}, "text", "Porkbun LLC"], ["tel", {"type": "voice"}, "uri", "tel:+1.8557675286"], ["email", {}, "text", "abuse@porkbun.com"]]]}]
+    "handle": "9999", "roles": ["registrar"],
+    "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Example Registrar LLC"]]],
+    "publicIds": [{"type": "IANA Registrar ID", "identifier": "9999"}],
+    "links": [{"rel": "about", "href": "https://registrar.example"}],
+    "entities": [{"roles": ["abuse"], "vcardArray": ["vcard", [["fn", {}, "text", "Example Registrar LLC"], ["tel", {"type": "voice"}, "uri", "tel:+1.5555550100"], ["email", {}, "text", "abuse@registrar.example"]]]}]
   }],
   "notices": [{"title": "Terms of Use", "description": ["..."]}],
   "links": [{"rel": "self", "href": "https://rdap.test:%PORT%/domain/example.test"}, {"rel": "related", "href": "https://registrar.test:%PORT%/rdap/domain/example.test", "type": "application/rdap+json"}]
@@ -44,7 +45,7 @@ const registrarJSON = `{
   "events": [{"eventAction": "expiration", "eventDate": "%EXP%"}],
   "entities": [{
     "roles": ["registrant"],
-    "vcardArray": ["vcard", [["fn", {}, "text", "Myko Nordy"], ["org", {}, "text", "Nordy Studio"], ["email", {}, "text", "hello@example.test"], ["adr", {}, "text", ["", "", "Some street", "Oslo", "", "0150", "NO"]]]]
+    "vcardArray": ["vcard", [["fn", {}, "text", "Jane Doe"], ["org", {}, "text", "Example Studio"], ["email", {}, "text", "hello@example.test"], ["adr", {}, "text", ["", "", "Some street", "Springfield", "", "00000", "US"]]]]
   }]
 }`
 
@@ -57,7 +58,7 @@ type world struct {
 
 func setup(t *testing.T) *world {
 	t.Helper()
-	cert := testdns.NewCert(t, "rdap.test", "registrar.test", "data.iana.test")
+	cert := testdns.NewCert(t, "rdap.test", "registrar.test")
 	exp := time.Now().Add(20 * 24 * time.Hour).UTC().Format(time.RFC3339)
 	// WHOIS registries often give a bare date; keep it relative so the test never ages out.
 	whoisExp := time.Now().UTC().AddDate(0, 0, 200).Format("2006-01-02")
@@ -116,7 +117,7 @@ func setup(t *testing.T) *world {
 	}()
 	_, wport, _ := net.SplitHostPort(wl.Addr().String())
 	var whoisPort int
-	_, _ = fmtSscan(wport, &whoisPort)
+	whoisPort, _ = strconv.Atoi(wport)
 
 	dnsAddr := testdns.UDP(t, testdns.Zone(t,
 		"rdap.test. 300 IN A 127.0.0.1",
@@ -143,25 +144,17 @@ func setup(t *testing.T) *world {
 	return &world{op: op, ep: contract.Endpoint{Transport: "udp", Address: dnsAddr}, exp: exp, whoisExp: whoisExp}
 }
 
-func fmtSscan(s string, out *int) (int, error) {
-	n := 0
-	for _, c := range s {
-		n = n*10 + int(c-'0')
-	}
-	*out = n
-	return 1, nil
-}
-
 func TestRDAPWithRegistrarReferral(t *testing.T) {
 	w := setup(t)
 	res, err := w.op.Run(context.Background(), Params{Domain: "Example.TEST.", Endpoint: w.ep})
 	if err != nil {
 		t.Fatal(err)
 	}
+	testdns.Sample(t, "rdap", res)
 	if res.Source != "rdap" || !res.Found || res.Handle != "D123" || res.RegistrarServer == "" {
 		t.Fatalf("%+v", res)
 	}
-	if res.Registrar.Name != "Porkbun LLC" || res.Registrar.IANAID != "1861" || res.Registrar.URL != "https://porkbun.com" || res.Registrar.AbuseEmail != "abuse@porkbun.com" || res.Registrar.AbusePhone != "+1.8557675286" {
+	if res.Registrar.Name != "Example Registrar LLC" || res.Registrar.IANAID != "9999" || res.Registrar.URL != "https://registrar.example" || res.Registrar.AbuseEmail != "abuse@registrar.example" || res.Registrar.AbusePhone != "+1.5555550100" {
 		t.Fatalf("registrar: %+v", res.Registrar)
 	}
 	if len(res.Status) != 2 || res.Status[0].Code != "client transfer prohibited" || !strings.Contains(res.Status[0].Meaning, "transfers") {
@@ -177,7 +170,7 @@ func TestRDAPWithRegistrarReferral(t *testing.T) {
 		t.Fatalf("dnssec: %+v", res.DNSSEC)
 	}
 	// Registrant came from the registrar's response.
-	if len(res.Contacts) != 1 || res.Contacts[0].Name != "Myko Nordy" || res.Contacts[0].Org != "Nordy Studio" || res.Contacts[0].Email != "hello@example.test" {
+	if len(res.Contacts) != 1 || res.Contacts[0].Name != "Jane Doe" || res.Contacts[0].Org != "Example Studio" || res.Contacts[0].Email != "hello@example.test" {
 		t.Fatalf("contacts: %+v", res.Contacts)
 	}
 	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "expires in") {
@@ -254,12 +247,12 @@ func TestValidationAndEnvelope(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &res); err != nil {
 		t.Fatal(err)
 	}
-	if res.Registrar.Name != "Porkbun LLC" || res.ExpiresInDays == nil {
+	if res.Registrar.Name != "Example Registrar LLC" || res.ExpiresInDays == nil {
 		t.Fatalf("%s", resp.Result)
 	}
 }
 
-func TestBootstrapParsing(t *testing.T) {
+func TestEmbeddedBootstrap(t *testing.T) {
 	b := Embedded()
 	if b.Publication == "" || len(b.Servers("com")) == 0 || len(b.Servers("foo")) == 0 || b.Servers("com")[0][len(b.Servers("com")[0])-1] != '/' {
 		t.Fatalf("embedded bootstrap: %s com=%v foo=%v", b.Publication, b.Servers("com"), b.Servers("foo"))
@@ -267,6 +260,9 @@ func TestBootstrapParsing(t *testing.T) {
 	if b.Servers("nonexistent-tld") != nil {
 		t.Fatal("unknown TLD must return nil")
 	}
+}
+
+func TestStatusMeaningAndDates(t *testing.T) {
 	if statusMeaning("clientTransferProhibited") == "" || statusMeaning("client transfer prohibited") == "" || statusMeaning("weird") != "" {
 		t.Fatal("status meanings")
 	}

@@ -5,9 +5,9 @@ package health
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -18,8 +18,11 @@ import (
 	"github.com/n0rdy/nordyg/core/internal/certs"
 	"github.com/n0rdy/nordyg/core/internal/contract"
 	"github.com/n0rdy/nordyg/core/internal/dnssec"
+	"github.com/n0rdy/nordyg/core/internal/prose"
+	"github.com/n0rdy/nordyg/core/internal/resolve"
 	"github.com/n0rdy/nordyg/core/internal/trace"
 	"github.com/n0rdy/nordyg/core/internal/transport"
+	"github.com/n0rdy/nordyg/core/internal/verdict"
 )
 
 // Params is the op input. Endpoint is the resolver used for nameserver
@@ -36,17 +39,14 @@ type Params struct {
 
 // Finding statuses, worst last.
 const (
-	OK   = "ok"
-	Info = "info"
-	Warn = "warn"
-	Fail = "fail"
+	OK   = verdict.OK
+	Info = verdict.Info
+	Warn = verdict.Warn
+	Fail = verdict.Fail
 )
 
 // Finding is one observation with its severity.
-type Finding struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
-}
+type Finding = verdict.Finding
 
 // Section carries the verdict and the findings behind it. It is embedded in
 // every section, so its fields appear inline in the JSON.
@@ -56,40 +56,12 @@ type Section struct {
 }
 
 func (s *Section) add(status, format string, args ...any) {
-	s.Findings = append(s.Findings, Finding{status, fmt.Sprintf(format, args...)})
+	s.Findings = append(s.Findings, Finding{Status: status, Message: fmt.Sprintf(format, args...)})
 }
 
 // settle sets the verdict to the worst finding, or to ok with okMsg.
 func (s *Section) settle(okMsg string) {
-	worst, first, more := OK, "", 0
-	for _, f := range s.Findings {
-		switch {
-		case rank(f.Status) > rank(worst):
-			worst, first, more = f.Status, f.Message, 0
-		case rank(f.Status) == rank(worst) && worst != OK:
-			more++
-		}
-	}
-	if worst == OK {
-		s.Verdict = Finding{OK, okMsg}
-		return
-	}
-	if more > 0 {
-		first += fmt.Sprintf(" (and %d more)", more)
-	}
-	s.Verdict = Finding{worst, first}
-}
-
-func rank(s string) int {
-	switch s {
-	case Info:
-		return 1
-	case Warn:
-		return 2
-	case Fail:
-		return 3
-	}
-	return 0
+	s.Verdict = verdict.Worst(s.Findings, okMsg)
 }
 
 // Delegation compares what the parent says with what the zone says.
@@ -122,7 +94,8 @@ type Server struct {
 	Status        string    `json:"status"`
 	Problems      []Finding `json:"problems"`
 
-	soa *dns.SOA // the full record, for the SOA section
+	soa        *dns.SOA // the full record, for the SOA section
+	unresolved bool     // the address lookup failed, so nothing is known about it
 }
 
 // AXFR outcomes.
@@ -143,6 +116,8 @@ type Nameservers struct {
 type SerialGroup struct {
 	Serial  uint32   `json:"serial"`
 	Servers []string `json:"servers"`
+
+	names []string // the servers' names without their addresses
 }
 
 // SOA reports the zone's SOA and serial agreement.
@@ -202,7 +177,11 @@ type Result struct {
 	CAA         CAA         `json:"caa"`
 	HTTPS       HTTPS       `json:"https"`
 	Overall     Finding     `json:"overall"`
+
+	skippedRest bool // the delegation was too broken to check the sections after it
 }
+
+const notChecked = "not checked: the delegation is broken"
 
 // Op is the configured handler.
 type Op struct {
@@ -220,13 +199,7 @@ type Op struct {
 
 // Register attaches the op to d.
 func (op *Op) Register(d *bridge.Dispatcher) {
-	d.Register("health", func(ctx context.Context, raw json.RawMessage) (any, error) {
-		var p Params
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, &bridge.Error{Code: bridge.CodeBadRequest, Message: "params: " + err.Error()}
-		}
-		return op.Run(ctx, p)
-	})
+	d.Register("health", bridge.Typed(op.Run))
 }
 
 // Run performs the checks.
@@ -246,11 +219,11 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 		return nil, err
 	}
 	o := p.Options.Resolve()
-	r := &resolver{client: op.Client, ep: p.Endpoint, o: o, boot: p.Bootstrap}
+	r := &resolve.Resolver{Client: op.Client, Endpoint: p.Endpoint, Options: o, Bootstrap: p.Bootstrap}
 	if err := op.Client.CheckResolver(ctx, p.Endpoint, o, p.Bootstrap); err != nil {
 		return nil, err
 	}
-	r.o.RecursionDesired = true
+	r.Options.RecursionDesired = true
 
 	res := &Result{Domain: domain, Zone: domain}
 	res.Delegation.ParentNS, res.Delegation.ChildNS = []string{}, []string{}
@@ -267,6 +240,7 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	caaDone := make(chan struct{})
 	wg.Add(1)
 	go func() { defer wg.Done(); defer close(caaDone); res.CAA = checkCAA(ctx, r, domain) }()
+	// The goroutines write into res, so no return path may leave one behind.
 	defer wg.Wait()
 
 	tr, hops, traceErr := op.trace(ctx, p, domain)
@@ -284,31 +258,31 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 		if last := hops[len(hops)-1]; !strings.EqualFold(last.Zone, apex) && dns.IsSubDomain(last.Zone, apex) {
 			if ref = op.cohosted(ctx, last.Server.Address, apex, o); ref != nil {
 				parent = last.Zone
-				d.add(Info, "the servers of %s also serve %s, so the delegation was read from them directly", proseZone(parent), prose(apex))
+				d.add(Info, "the servers of %s also serve %s, so the delegation was read from them directly", prose.Zone(parent), prose.Name(apex))
 			}
 		}
 	}
 	d.Parent = parent
 	switch {
 	case !exists:
-		d.add(Fail, "%s does not exist (NXDOMAIN from the authoritative servers)", prose(domain))
+		d.add(Fail, "%s does not exist (NXDOMAIN from the authoritative servers)", prose.Name(domain))
 	case ref == nil && traceErr != nil:
-		d.add(Fail, "the delegation from the root breaks before reaching %s: %s", prose(apex), traceErr.Error())
+		d.add(Fail, "the delegation from the root breaks before reaching %s: %s", prose.Name(apex), bridge.Message(traceErr))
 	case ref == nil:
-		d.add(Fail, "no referral to %s was seen on the way down from the root", prose(apex))
+		d.add(Fail, "no referral to %s was seen on the way down from the root", prose.Name(apex))
 	}
 	if apex != domain && exists {
-		d.add(Info, "%s is not a zone apex, so the zone %s that contains it was checked", prose(domain), prose(apex))
+		d.add(Info, "%s is not a zone apex, so the zone %s that contains it was checked", prose.Name(domain), prose.Name(apex))
 	}
 	if ref == nil || !exists {
 		wg.Wait()
-		res.HTTPS.Verdict = Finding{Info, "not checked: the delegation is broken"}
+		res.HTTPS.Verdict = Finding{Status: Info, Message: notChecked}
 		res.skipAfterDelegation()
 		res.finish()
 		return res, nil
 	}
 	if traceErr != nil {
-		d.add(Fail, "the trace to %s's SOA failed after the delegation: %s", prose(apex), traceErr.Error())
+		d.add(Fail, "the trace to %s's SOA failed after the delegation: %s", prose.Name(apex), bridge.Message(traceErr))
 	}
 	d.ParentNS = append(d.ParentNS, ref.Nameservers...)
 
@@ -319,12 +293,24 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 		res.HTTPS = op.checkHTTPS(ctx, p, r, o, apex, res.CAA)
 	}()
 
+	// A name whose lookup failed is kept apart from one that has no
+	// addresses: the first says something about the resolver, the second
+	// about the zone.
+	lookupErrs := map[string]error{}
+	resolveNS := func(name string, glue []string) []string {
+		found, err := r.Addrs(ctx, name)
+		all := union(glue, found)
+		if len(all) == 0 && err != nil {
+			lookupErrs[name] = err
+		}
+		return all
+	}
 	// Round one: every name the parent delegates to.
 	addrs := map[string][]string{}
 	for _, name := range ref.Nameservers {
-		addrs[name] = union(ref.Glue[name], r.addrs(ctx, name))
+		addrs[name] = resolveNS(name, ref.Glue[name])
 	}
-	servers := op.probeAll(ctx, apex, addrs, o)
+	servers := op.probeAll(ctx, apex, addrs, lookupErrs, o)
 	for i := range servers {
 		servers[i].AtParent = true
 	}
@@ -333,10 +319,10 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	extra := map[string][]string{}
 	for _, name := range childNS {
 		if !contains(ref.Nameservers, name) {
-			extra[name] = r.addrs(ctx, name)
+			extra[name] = resolveNS(name, nil)
 		}
 	}
-	servers = append(servers, op.probeAll(ctx, apex, extra, o)...)
+	servers = append(servers, op.probeAll(ctx, apex, extra, lookupErrs, o)...)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -427,11 +413,11 @@ func referralFor(hops []trace.Hop, apex string) (*trace.Referral, string) {
 // skipAfterDelegation settles every later section when the delegation is
 // too broken to check anything else.
 func (r *Result) skipAfterDelegation() {
-	const msg = "not checked: the delegation is broken"
-	r.Nameservers.Verdict = Finding{Info, msg}
-	r.SOA.Verdict = Finding{Info, msg}
-	r.Glue.Verdict = Finding{Info, msg}
-	r.DNSSEC.Verdict = Finding{Info, msg}
+	r.skippedRest = true
+	r.Nameservers.Verdict = Finding{Status: Info, Message: notChecked}
+	r.SOA.Verdict = Finding{Status: Info, Message: notChecked}
+	r.Glue.Verdict = Finding{Status: Info, Message: notChecked}
+	r.DNSSEC.Verdict = Finding{Status: Info, Message: notChecked}
 	r.DNSSEC.Status = ""
 }
 
@@ -444,62 +430,16 @@ func (r *Result) finish() {
 			s.Findings = []Finding{}
 		}
 	}
-	fails, warns := 0, 0
-	for _, v := range []Finding{r.Delegation.Verdict, r.Nameservers.Verdict, r.SOA.Verdict, r.Glue.Verdict, r.DNSSEC.Verdict, r.CAA.Verdict, r.HTTPS.Verdict} {
-		switch v.Status {
-		case Fail:
-			fails++
-		case Warn:
-			warns++
-		}
-	}
+	tally, bad := verdict.Tally(r.Delegation.Verdict, r.Nameservers.Verdict, r.SOA.Verdict, r.Glue.Verdict, r.DNSSEC.Verdict, r.CAA.Verdict, r.HTTPS.Verdict)
 	switch {
-	case r.Delegation.Verdict.Status == Fail && strings.HasPrefix(r.Nameservers.Verdict.Message, "not checked"):
+	case r.Delegation.Verdict.Status == Fail && r.skippedRest:
 		// Nothing past the delegation could be checked, so its reason is the story.
 		r.Overall = r.Delegation.Verdict
-	case fails > 0:
-		msg := fmt.Sprintf("%d check%s failing", fails, plural(fails))
-		if warns > 0 {
-			msg += fmt.Sprintf(", %d warning%s", warns, plural(warns))
-		}
-		r.Overall = Finding{Fail, msg}
-	case warns > 0:
-		r.Overall = Finding{Warn, fmt.Sprintf("no failures, %d warning%s", warns, plural(warns))}
+	case bad:
+		r.Overall = tally
 	default:
-		r.Overall = Finding{OK, "the zone " + prose(r.Zone) + " looks healthy"}
+		r.Overall = Finding{Status: OK, Message: "the zone " + prose.Name(r.Zone) + " looks healthy"}
 	}
-}
-
-// --- resolver ----------------------------------------------------------------
-
-type resolver struct {
-	client *transport.Client
-	ep     contract.Endpoint
-	o      contract.Effective
-	boot   []contract.Endpoint
-}
-
-func (r *resolver) lookup(ctx context.Context, name string, t uint16) (*dns.Msg, error) {
-	q := r.o.Build(contract.Resolved{Name: dns.Fqdn(name), Type: t, Class: dns.ClassINET})
-	res, err := r.client.Exchange(ctx, r.ep, q, r.o, r.boot)
-	if err != nil {
-		return nil, err
-	}
-	return res.Msg, nil
-}
-
-// addrs returns the A and AAAA addresses of name, or nil when it has none
-// or the lookups fail.
-func (r *resolver) addrs(ctx context.Context, name string) []string {
-	var out []string
-	for _, t := range []uint16{dns.TypeA, dns.TypeAAAA} {
-		m, err := r.lookup(ctx, name, t)
-		if err != nil {
-			continue
-		}
-		out = append(out, addresses(m.Answer, "")...)
-	}
-	return out
 }
 
 // addresses extracts A/AAAA values, only for owner when it is not empty.
@@ -519,8 +459,6 @@ func addresses(rrs []dns.RR, owner string) []string {
 	return out
 }
 
-// --- helpers -----------------------------------------------------------------
-
 func union(a, b []string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -535,12 +473,7 @@ func union(a, b []string) []string {
 }
 
 func contains(list []string, s string) bool {
-	for _, v := range list {
-		if strings.EqualFold(v, s) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(list, func(v string) bool { return strings.EqualFold(v, s) })
 }
 
 // ipLess orders IPv4 before IPv6, then lexically.
@@ -552,29 +485,11 @@ func ipLess(a, b string) bool {
 	return a < b
 }
 
-func plural(n int) string {
-	if n == 1 {
-		return ""
+// label names a server in a finding: "ns1.example.com (192.0.2.1)", or the
+// bare name when it has no address.
+func label(s Server) string {
+	if s.IP == "" {
+		return prose.Name(s.Name)
 	}
-	return "s"
-}
-
-func prose(name string) string {
-	if name == "." {
-		return "the root"
-	}
-	return strings.TrimSuffix(name, ".")
-}
-
-func label(s Server) string { return prose(s.Name) + " (" + s.IP + ")" }
-
-// proseZone renders a zone for prose: "the .cz zone", "the zone example.com".
-func proseZone(zone string) string {
-	switch dns.CountLabel(zone) {
-	case 0:
-		return "the root zone"
-	case 1:
-		return "the ." + strings.TrimSuffix(zone, ".") + " zone"
-	}
-	return "the zone " + strings.TrimSuffix(zone, ".")
+	return prose.Name(s.Name) + " (" + s.IP + ")"
 }

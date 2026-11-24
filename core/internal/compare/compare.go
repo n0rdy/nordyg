@@ -1,10 +1,9 @@
-// Package compare implements the "compare" op (contract §5): the same question
+// Package compare implements the "compare" op: the same question
 // to several endpoints at once, grouped by answer so disagreement stands out.
 package compare
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"sort"
 	"strconv"
@@ -59,13 +58,7 @@ type Op struct {
 
 // Register attaches the op to d.
 func (op *Op) Register(d *bridge.Dispatcher) {
-	d.Register("compare", func(ctx context.Context, raw json.RawMessage) (any, error) {
-		var p Params
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, &bridge.Error{Code: bridge.CodeBadRequest, Message: "params: " + err.Error()}
-		}
-		return op.Run(ctx, p)
-	})
+	d.Register("compare", bridge.Typed(op.Run))
 }
 
 // Run queries every endpoint concurrently and groups the outcomes.
@@ -91,10 +84,10 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	var wg sync.WaitGroup
 	for i, ep := range p.Endpoints {
 		wg.Add(1)
-		go func(i int, ep contract.Endpoint) {
+		go func() {
 			defer wg.Done()
 			entries[i] = op.one(ctx, p, ep)
-		}(i, ep)
+		}()
 	}
 	wg.Wait()
 	if ctx.Err() != nil {

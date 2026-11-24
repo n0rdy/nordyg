@@ -12,7 +12,7 @@ guard args.count == 4, let logo = NSImage(contentsOfFile: args[1]) else {
 }
 let fm = FileManager.default
 
-// 1. The icon layer: the SVG itself, so nothing is rasterised.
+// The icon layer: the SVG itself, so nothing is rasterised.
 let assets = args[2] + "/Assets"
 try! fm.createDirectory(atPath: assets, withIntermediateDirectories: true)
 for old in (try? fm.contentsOfDirectory(atPath: assets)) ?? [] {
@@ -21,7 +21,7 @@ for old in (try? fm.contentsOfDirectory(atPath: assets)) ?? [] {
 try! fm.copyItem(atPath: args[1], toPath: assets + "/logo.svg")
 print("wrote \(assets)/logo.svg")
 
-// 2. Site images: the mark on the ink tile of the icon (#141c26), as the
+// Site images: the mark on the ink tile of the icon (#141c26), as the
 // browser tab, header, touch icon and link preview show it.
 let ink = NSColor(srgbRed: 0x14 / 255.0, green: 0x1c / 255.0, blue: 0x26 / 255.0, alpha: 1)
 

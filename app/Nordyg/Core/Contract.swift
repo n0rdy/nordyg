@@ -1,6 +1,7 @@
 import Foundation
 
-// Swift mirror of context/contract.md. Property names are camelCase; the coder
+// Swift mirror of the core's JSON contract (core/internal/contract and each
+// op's Params and Result). Property names are camelCase; the coder
 // converts to and from snake_case. Unknown fields are ignored on decode so
 // the core can add data freely.
 
@@ -219,17 +220,12 @@ struct CompareParams: Codable {
     var options: Options
     var bootstrap: [Endpoint]
 }
-struct BridgeError: Codable, Hashable, Error {
-    var code: String
-    var message: String
-    var details: JSONValue?
-}
 struct CompareEntry: Codable, Hashable {
     var endpoint: Endpoint
     var ok: Bool
     var message: Message?
     var exchange: Exchange?
-    var error: BridgeError?
+    var error: CoreError?
 }
 struct CompareGroup: Codable, Hashable {
     var key: String
@@ -287,7 +283,7 @@ struct ExportParams: Codable {
     var options: Options
     var format: String
     /// Export the walk from the root (dig +trace); endpoint is then ignored.
-    var trace: Bool? = nil
+    var trace: Bool?
 }
 struct ExportResult: Codable { var command: String }
 
@@ -332,9 +328,7 @@ struct RDAPResult: Codable, Hashable {
     var bootstrapSource: String
 }
 
-// MARK: email
-
-// MARK: health (contract §8d)
+// MARK: health
 
 struct HealthParams: Codable {
     var domain: String
@@ -412,6 +406,8 @@ struct HealthResult: Codable, Hashable {
     var https: HealthHTTPS
     var overall: Verdict
 }
+
+// MARK: email
 
 struct EmailParams: Codable {
     var domain: String

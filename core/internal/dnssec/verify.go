@@ -1,6 +1,7 @@
 package dnssec
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,6 +63,8 @@ func findSet(sets []*rrset, name string, typ uint16) *rrset {
 	return nil
 }
 
+// supportedAlgorithm lists what miekg/dns can verify. ED448 is missing from
+// it for that reason, so a zone signed only with ED448 comes out insecure.
 func supportedAlgorithm(a uint8) bool {
 	switch a {
 	case dns.RSASHA1, dns.RSASHA1NSEC3SHA1, dns.RSASHA256, dns.RSASHA512, dns.ECDSAP256SHA256, dns.ECDSAP384SHA384, dns.ED25519:
@@ -93,7 +96,7 @@ func verifySetSig(s *rrset, keys []*dns.DNSKEY, zone string, now time.Time) ([]S
 		case !strings.EqualFold(sig.SignerName, zone):
 			entry.Error = "signer " + sig.SignerName + " is not the zone " + zone
 		case int(sig.Labels) > ownerLabels(s.name):
-			entry.Error = "RRSIG labels field " + itoa(int(sig.Labels)) + " exceeds the " + itoa(ownerLabels(s.name)) + " labels of " + s.name + " (RFC 4035 §5.3.1)"
+			entry.Error = "RRSIG labels field " + strconv.Itoa(int(sig.Labels)) + " exceeds the " + strconv.Itoa(ownerLabels(s.name)) + " labels of " + s.name + " (RFC 4035 §5.3.1)"
 		case !sig.ValidityPeriod(now):
 			if now.After(msg.SerialTime(sig.Expiration)) {
 				entry.Error = "signature expired " + msg.SerialTime(sig.Expiration).Format(time.RFC3339)
@@ -103,9 +106,9 @@ func verifySetSig(s *rrset, keys []*dns.DNSKEY, zone string, now time.Time) ([]S
 		default:
 			cands := keysFor(keys, sig)
 			if len(cands) == 0 {
-				entry.Error = "no DNSKEY with tag " + itoa(int(sig.KeyTag)) + " and algorithm " + itoa(int(sig.Algorithm))
+				entry.Error = "no DNSKEY with tag " + strconv.Itoa(int(sig.KeyTag)) + " and algorithm " + strconv.Itoa(int(sig.Algorithm))
 			} else if !supportedAlgorithm(sig.Algorithm) {
-				entry.Error = "unsupported algorithm " + itoa(int(sig.Algorithm))
+				entry.Error = "unsupported algorithm " + strconv.Itoa(int(sig.Algorithm))
 			} else {
 				// Key tags collide, so every key with the tag is a candidate
 				// (RFC 4035 §5.3.1).
@@ -226,7 +229,7 @@ func matchDS(keys []*dns.DNSKEY, dss []*dns.DS) ([]*dns.DNSKEY, []DSRef, bool) {
 func keyRefs(keys []*dns.DNSKEY, anchors []*dns.DNSKEY) []KeyRef {
 	out := make([]KeyRef, 0, len(keys))
 	for _, k := range keys {
-		ref := KeyRef{KeyTag: k.KeyTag(), Algorithm: k.Algorithm, AlgorithmName: algName(k.Algorithm), Role: role(k.Flags)}
+		ref := KeyRef{KeyTag: k.KeyTag(), Algorithm: k.Algorithm, AlgorithmName: msg.AlgName(k.Algorithm), Role: msg.KeyRole(k.Flags)}
 		for _, a := range anchors {
 			if a == k {
 				ref.TrustAnchor = true
@@ -235,41 +238,4 @@ func keyRefs(keys []*dns.DNSKEY, anchors []*dns.DNSKEY) []KeyRef {
 		out = append(out, ref)
 	}
 	return out
-}
-
-func role(flags uint16) string {
-	switch {
-	case flags&dns.REVOKE != 0:
-		return "revoked"
-	case flags&dns.SEP != 0:
-		return "ksk"
-	case flags&dns.ZONE != 0:
-		return "zsk"
-	}
-	return "other"
-}
-
-func algName(a uint8) string {
-	if s, ok := dns.AlgorithmToString[a]; ok {
-		return s
-	}
-	return "ALG" + itoa(int(a))
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	neg := i < 0
-	if neg {
-		i = -i
-	}
-	var b []byte
-	for ; i > 0; i /= 10 {
-		b = append([]byte{byte('0' + i%10)}, b...)
-	}
-	if neg {
-		b = append([]byte{'-'}, b...)
-	}
-	return string(b)
 }

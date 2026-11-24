@@ -8,7 +8,6 @@ enum SystemResolvers {
     struct Entry: Hashable {
         var interface: String?
         var addresses: [String]
-        var searchDomains: [String]
     }
 
     static func current() -> [Entry] {
@@ -56,9 +55,7 @@ enum SystemResolvers {
     }
 
     private static func entry(from dict: [String: Any], interface: String?) -> Entry {
-        Entry(interface: interface,
-              addresses: dict["ServerAddresses"] as? [String] ?? [],
-              searchDomains: dict["SearchDomains"] as? [String] ?? [])
+        Entry(interface: interface, addresses: dict["ServerAddresses"] as? [String] ?? [])
     }
 
     private static func serviceName(_ store: SCDynamicStore, _ dnsKey: String) -> String? {

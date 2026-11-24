@@ -182,10 +182,7 @@ struct LinkCard: View {
                 ForEach(Array(link.signatures.enumerated()), id: \.offset) { _, s in SignatureRow(sig: s) }
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .card()
     }
 }
 

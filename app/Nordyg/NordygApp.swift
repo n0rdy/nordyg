@@ -48,9 +48,7 @@ struct NordygApp: App {
                 }
                 Divider()
                 Menu("Watch this query") {
-                    ForEach(WatchCenter.intervals, id: \.self) { s in
-                        Button("Every \(WatchCenter.intervalLabel(s))") { model.watchCurrent(interval: s) }
-                    }
+                    WatchIntervalButtons(model: model)
                 }.disabled(!model.canWatch)
             }
             CommandMenu("Export") {

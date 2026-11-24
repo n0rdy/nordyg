@@ -25,17 +25,15 @@ struct ContentView: View {
                 ModeSwitcher(mode: $model.mode)
             }
             if model.mode == .query && !model.severalResolvers {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    ForEach(WatchCenter.intervals, id: \.self) { s in
-                        Button("Every \(WatchCenter.intervalLabel(s))") { model.watchCurrent(interval: s) }
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        WatchIntervalButtons(model: model)
+                    } label: {
+                        Label("Watch", systemImage: "eye")
                     }
-                } label: {
-                    Label("Watch", systemImage: "eye")
+                    .help("Re-run this query on a schedule and get notified when the answer changes")
+                    .disabled(!model.canWatch)
                 }
-                .help("Re-run this query on a schedule and get notified when the answer changes")
-                .disabled(!model.canWatch)
-            }
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { model.clearResult() } label: {
@@ -59,7 +57,7 @@ struct ContentView: View {
 /// The mode switcher in the toolbar. A native segmented picker there is drawn
 /// in the toolbar's glass style with a faint grey selection that ignores the
 /// tint, so this is plain buttons with the selection filled in the accent.
-/// ⌘1…⌘6 switch modes.
+/// ⌘1…⌘5 switch modes.
 struct ModeSwitcher: View {
     @Binding var mode: Mode
 
@@ -106,27 +104,27 @@ struct ResultArea: View {
             if let id = model.selectedWatch {
                 WatchView(id: id)
             } else {
-            // Each tab shows its own last result, or its explanation.
-            switch model.outcome {
-            case .none:
-                if let e = model.runErrors[model.mode], model.runningMode != model.mode {
-                    RunErrorView(error: e)
-                } else {
-                    Placeholder(running: model.runningMode == model.mode, mode: model.mode)
+                // Each tab shows its own last result, or its explanation.
+                switch model.outcome {
+                case .none:
+                    if let e = model.runErrors[model.mode], model.runningMode != model.mode {
+                        RunErrorView(error: e)
+                    } else {
+                        Placeholder(running: model.runningMode == model.mode, mode: model.mode)
+                    }
+                case .query(let results):
+                    QueryResultView(results: results)
+                case .compare(let r):
+                    CompareView(result: r)
+                case .trace(let r):
+                    TraceView(result: r)
+                case .email(let r):
+                    EmailView(result: r)
+                case .registry(let r):
+                    RegistryView(result: r)
+                case .health(let r):
+                    HealthView(result: r)
                 }
-            case .query(let results):
-                QueryResultView(results: results)
-            case .compare(let r):
-                CompareView(result: r)
-            case .trace(let r):
-                TraceView(result: r)
-            case .email(let r):
-                EmailView(result: r)
-            case .registry(let r):
-                RegistryView(result: r)
-            case .health(let r):
-                HealthView(result: r)
-            }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -187,9 +185,6 @@ struct RunErrorView: View {
     }
 }
 
-/// The start panel: what the mode does in a sentence, then examples that
-/// run on click. Left-aligned under the command bar, where the eye already
-/// is; a centred paragraph in the middle of the window reads poorly.
 /// Covers a tab's previous result while it re-runs. Appears after 150 ms so
 /// fast queries do not flicker.
 struct RunningOverlay: View {
@@ -219,6 +214,9 @@ struct RunningOverlay: View {
     }
 }
 
+/// The start panel: what the mode does in a sentence, then examples that
+/// run on click. Left-aligned under the command bar, where the eye already
+/// is; a centred paragraph in the middle of the window reads poorly.
 struct Placeholder: View {
     @EnvironmentObject var model: AppModel
     var running: Bool
@@ -317,7 +315,7 @@ struct ExportMenu: View {
             Button(model.mode == .trace ? "Copy as dig +trace" : "Copy as \(fmt)") {
                 Task { if let cmd = await model.exportCommand(fmt) { Pasteboard.copy(cmd) } }
             }
-            .disabled(model.name.trimmingCharacters(in: .whitespaces).isEmpty)
+            .disabled(model.trimmedName.isEmpty)
         }
         if !formats.isEmpty { Divider() }
         Button("Copy result as JSON") { if let s = model.exportJSON() { Pasteboard.copy(s) } }

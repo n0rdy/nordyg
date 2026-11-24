@@ -34,13 +34,8 @@ struct CompareView: View {
                 }
             }
             Divider()
-            // Pinned top-left: a two-axis ScrollView centres smaller content.
-            GeometryReader { geo in
-                ScrollView([.vertical, .horizontal]) {
-                    CompareGrid(result: result)
-                        .padding(16)
-                        .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
-                }
+            PinnedScroll {
+                CompareGrid(result: result).padding(16)
             }
             if !result.consistent {
                 Divider()

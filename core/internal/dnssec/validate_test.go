@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+
+	"github.com/n0rdy/nordyg/core/internal/testdns"
 )
 
 var errTimeout = errors.New("i/o timeout")
@@ -41,6 +43,10 @@ func newWorld(t *testing.T) *world {
 	w.bogus.add("bogus.test. 300 IN A 192.0.2.30")
 	w.expiredZ = newZone(t, "expired.test.", expired())
 	w.expiredZ.add("expired.test. 300 IN A 192.0.2.40")
+	future := newZone(t, "future.test.", notYetValid())
+	future.add("future.test. 300 IN A 192.0.2.41")
+	newAlg := newZone(t, "newalg.test.")
+	newAlg.add("newalg.test. 300 IN A 192.0.2.42")
 	w.badsig = newZone(t, "badsig.test.", corrupt())
 	w.badsig.add("badsig.test. 300 IN A 192.0.2.50")
 	w.strippedZ = newZone(t, "stripped.test.", stripped())
@@ -61,6 +67,8 @@ func newWorld(t *testing.T) *world {
 	w.tld.delegate(w.unsigned, false)
 	w.tld.delegateBogusDS(w.bogus)
 	w.tld.delegate(w.expiredZ, true)
+	w.tld.delegate(future, true)
+	w.tld.delegateUnsupportedDS(newAlg)
 	w.tld.delegate(w.badsig, true)
 	w.tld.delegate(w.strippedZ, true)
 	w.tld.delegate(w.rsa, true)
@@ -75,7 +83,7 @@ func newWorld(t *testing.T) *world {
 	w.example.delegate(deep, false)
 	w.root.delegate(w.tld, true)
 
-	for _, z := range []*zone{deep, w.root, w.tld, w.example, other, w.unsigned, w.bogus, w.expiredZ, w.badsig, w.strippedZ, w.rsa, w.n3, w.n3optoutChild, w.n3signedChild} {
+	for _, z := range []*zone{deep, future, newAlg, w.root, w.tld, w.example, other, w.unsigned, w.bogus, w.expiredZ, w.badsig, w.strippedZ, w.rsa, w.n3, w.n3optoutChild, w.n3signedChild} {
 		z.sign()
 	}
 	w.fetch = &memFetcher{answer: recursive(w.root), fail: map[string]bool{}}
@@ -108,6 +116,7 @@ func zones(res *Result) []string {
 func TestSecurePositive(t *testing.T) {
 	w := newWorld(t)
 	res := w.query(t, "example.test.", dns.TypeA)
+	testdns.Sample(t, "dnssec", res)
 	if res.Status != Secure {
 		t.Fatalf("%s: %s\n%v", res.Status, res.Reason, zones(res))
 	}
@@ -339,11 +348,39 @@ func TestInsecureDelegation(t *testing.T) {
 	}
 }
 
+// A zone signed only with algorithms this validator lacks must come out
+// insecure, as RFC 4035 §5.2 asks, and never secure or bogus.
+func TestUnsupportedDSAlgorithmIsInsecure(t *testing.T) {
+	w := newWorld(t)
+	res := w.query(t, "newalg.test.", dns.TypeA)
+	if res.Status != Insecure || !strings.Contains(res.Reason, "unsupported algorithms") {
+		t.Fatalf("%s %q\n%v", res.Status, res.Reason, zones(res))
+	}
+	if got := strings.Join(zones(res), " "); got != ".:secure test.:secure newalg.test.:insecure" {
+		t.Fatal(got)
+	}
+}
+
+func TestNSEC3IterationsOverTheCapProveNothing(t *testing.T) {
+	w := newWorld(t)
+	costly := *w.n3.nsec3Matching("a.nsec3.test.").(*dns.NSEC3)
+	costly.Iterations = maxNSEC3Iterations + 1
+	p := nsec3Proof(proof{}, []*dns.NSEC3{&costly}, "a.nsec3.test.", dns.TypeMX)
+	if p.kind != proofNone || !strings.Contains(p.reason, "exceed the limit") {
+		t.Fatalf("kind %d, reason %q", p.kind, p.reason)
+	}
+	costly.Iterations = maxNSEC3Iterations
+	if p := nsec3Proof(proof{}, []*dns.NSEC3{&costly}, "a.nsec3.test.", dns.TypeMX); strings.Contains(p.reason, "exceed the limit") {
+		t.Fatalf("the cap itself is still accepted: %q", p.reason)
+	}
+}
+
 func TestBogusCases(t *testing.T) {
 	w := newWorld(t)
 	cases := []struct{ name, want string }{
 		{"bogus.test.", "no DNSKEY of bogus.test matches its DS"},
-		{"expired.test.", "expired"},
+		{"expired.test.", "signature expired"},
+		{"future.test.", "signature not yet valid"},
 		{"badsig.test.", "does not verify"},
 		{"stripped.test.", "has no RRSIG"},
 	}

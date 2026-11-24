@@ -85,8 +85,6 @@ struct CNAMEFollow: View {
     }
 }
 
-func plural(_ n: Int, _ one: String, _ many: String? = nil) -> String { "\(n) \(n == 1 ? one : (many ?? one + "s"))" }
-
 struct HopRow: View {
     var index: Int
     var hop: TraceHop
@@ -164,7 +162,7 @@ struct HopRow: View {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
                             Image(systemName: ref.ds.isEmpty ? "lock.open" : "lock.fill").foregroundStyle(ref.ds.isEmpty ? Color.secondary : Color.yellow)
-                            Text(verbatim: ref.ds.isEmpty ? "hands off \(prose(ref.zone)) without a DS record (unsigned below here)" : "hands off \(prose(ref.zone)) with \(ref.ds.count) DS record\(ref.ds.count == 1 ? "" : "s")")
+                            Text(verbatim: ref.ds.isEmpty ? "hands off \(prose(ref.zone)) without a DS record (unsigned below here)" : "hands off \(prose(ref.zone)) with \(plural(ref.ds.count, "DS record"))")
                                 .font(.callout)
                         }
                         Text(ref.nameservers.joined(separator: "  ")).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
@@ -173,17 +171,12 @@ struct HopRow: View {
                                 .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2)
                         }
                     }
-                    .padding(8)
-                    .background(Color.secondary.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .inset()
                 } else if hop.message.answer.isEmpty {
                     // An empty answer still says something: name or type absent.
                     Text(Self.emptyAnswer(hop))
                         .font(.callout)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.06))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .inset(fullWidth: true)
                 } else {
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(Array(hop.message.answer.enumerated()), id: \.offset) { _, r in
@@ -193,13 +186,11 @@ struct HopRow: View {
                             }
                         }
                     }
-                    .padding(8)
-                    .background(Color.secondary.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .inset()
                 }
 
-                // The message link sits inline with the facts it belongs to; at
-                // the far right edge it went unseen.
+                // The message link sits inline with the facts it belongs to. At
+                // the far right edge it is easy to miss.
                 HStack(spacing: 6) {
                     Text(verbatim: "picked from \(plural(hop.candidates.count, "address", "addresses")) · \(hop.message.sizeBytes) bytes")
                         .foregroundStyle(.tertiary)
@@ -210,8 +201,7 @@ struct HopRow: View {
                 .font(.caption)
                 if showMessage {
                     Text(hop.message.text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                        .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 6))
+                        .inset(fill: Color.secondary.opacity(0.08), fullWidth: true)
                 }
             }
             .padding(.bottom, isLast ? 0 : 18)

@@ -12,13 +12,13 @@ struct HistoryView: View {
     var items: [HistoryItem] {
         let f = filter.trimmingCharacters(in: .whitespaces).lowercased()
         let list = model.history.filter { item in
-            (modeFilter == nil || item.mode == modeFilter?.rawValue || (modeFilter == .query && item.mode == "compare")) &&
+            (modeFilter.map(item.belongs(to:)) ?? true) &&
             (f.isEmpty || item.name.lowercased().contains(f) || item.type.lowercased().contains(f) || item.subtitle.lowercased().contains(f))
         }
         return list.sorted { ($0.pinned ? 1 : 0, $0.date) > ($1.pinned ? 1 : 0, $1.date) }
     }
 
-    private func count(_ m: Mode) -> Int { model.history.filter { $0.mode == m.rawValue || (m == .query && $0.mode == "compare") }.count }
+    private func count(_ m: Mode) -> Int { model.history.filter { $0.belongs(to: m) }.count }
 
     /// Watches are Query lookups, so a filter on another mode hides them.
     private var showWatches: Bool { !watches.watches.isEmpty && (modeFilter == nil || modeFilter == .query) }
@@ -31,13 +31,13 @@ struct HistoryView: View {
                         ForEach(watches.watches) { w in
                             Button { model.selectedWatch = w.id } label: {
                                 HStack(spacing: 8) {
-                                    Circle().fill(w.paused ? Color.secondary : (w.unread ? Color.orange : Color.green)).frame(width: 8, height: 8)
+                                    WatchDot(watch: w)
                                     VStack(alignment: .leading, spacing: 2) {
                                         HStack(spacing: 6) {
                                             Text(w.question.name).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(.middle)
                                             Text(w.question.type).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                         }
-                                        Text(verbatim: "every \(w.intervalLabel)" + (w.changes > 0 ? " · \(w.changes) change\(w.changes == 1 ? "" : "s")" : "") + (w.paused ? " · paused" : "")).font(.caption).foregroundStyle(.secondary)
+                                        Text(verbatim: "every \(w.intervalLabel)" + (w.changes > 0 ? " · \(plural(w.changes, "change"))" : "") + (w.paused ? " · paused" : "")).font(.caption).foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                 }
@@ -171,14 +171,15 @@ struct HistoryRow: View {
         }
     }
 
-    private var mode: Mode { item.mode == "compare" ? .query : (Mode(rawValue: item.mode) ?? .query) }
-    private var icon: String { item.mode == "compare" ? "checklist" : mode.icon }
+    private var mode: Mode { item.askedSeveral ? .query : (Mode(rawValue: item.mode) ?? .query) }
+    private var icon: String { item.askedSeveral ? "checklist" : mode.icon }
 
-    /// Only Query and Trace have a real record type; MAIL/RDAP/ZONE were stand-ins.
+    /// Only Query and Trace have a real record type. The other modes store
+    /// a label there (MAIL, RDAP, ZONE).
     private var recordType: String? { mode == .query || mode == .trace ? item.type : nil }
 
     private var resolverNote: String? {
-        if item.mode == "compare" { return "several resolvers" }
+        if item.askedSeveral { return "several resolvers" }
         guard let ep = item.endpoint, ep != model.systemEndpoints.first else { return nil }
         return ep.title
     }
@@ -188,9 +189,9 @@ struct HistoryRow: View {
     }
 
     private var tooltip: String {
-        var parts = [item.mode == "compare" ? "Query, several resolvers" : mode.title, item.name]
+        var parts = [item.askedSeveral ? "Query, several resolvers" : mode.title, item.name]
         if let t = recordType { parts.append(t) }
-        if item.mode != "compare", let ep = item.endpoint { parts.append("via \(ep.title)") }
+        if !item.askedSeveral, let ep = item.endpoint { parts.append("via \(ep.title)") }
         if mode == .trace { parts.append("from the root") }
         return parts.joined(separator: " ") + ", " + item.date.formatted(date: .abbreviated, time: .shortened)
     }

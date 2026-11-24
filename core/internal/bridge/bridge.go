@@ -4,7 +4,7 @@
 // exported C functions in cmd/libnordyg are thin wrappers around Dispatch and
 // Cancel.
 //
-// Rules enforced here (see CONTEXT.md, "Bridge rules"):
+// Rules enforced here:
 //   - every request carries a client-generated id and an op;
 //   - every response echoes the id;
 //   - a panic inside a handler never escapes: it becomes an error response;
@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"slices"
 	"sync"
 )
 
@@ -46,6 +47,16 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
 
+// Message is err worded for a sentence shown to the user: an Error's message
+// without its code, and the text of any other error.
+func Message(err error) string {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.Message
+	}
+	return err.Error()
+}
+
 // Stable error codes.
 const (
 	CodeBadRequest  = "bad_request"
@@ -61,13 +72,39 @@ const (
 // code; any other error is reported as CodeInternal.
 type Handler func(ctx context.Context, params json.RawMessage) (any, error)
 
+// Typed adapts an op that takes its params as a struct: it decodes the raw
+// JSON into P and reports missing or malformed params as bad_request.
+func Typed[P, R any](run func(ctx context.Context, p P) (R, error)) Handler {
+	return func(ctx context.Context, raw json.RawMessage) (any, error) {
+		if len(raw) == 0 {
+			return nil, &Error{Code: CodeBadRequest, Message: "params required"}
+		}
+		var p P
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, &Error{Code: CodeBadRequest, Message: "params: " + err.Error()}
+		}
+		res, err := run(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
+}
+
 // Dispatcher routes requests to handlers and tracks in-flight requests so they
 // can be cancelled.
 type Dispatcher struct {
 	mu       sync.Mutex
 	handlers map[string]Handler
 	inflight map[string]context.CancelFunc
+	// early holds the ids cancelled before their request was registered: the
+	// shell can cancel as soon as it has picked an id, while the request is
+	// still on its way in. Cancels for requests that already finished end up
+	// here too, which is why the list is bounded.
+	early []string
 }
+
+const maxEarlyCancels = 64
 
 // New returns an empty Dispatcher.
 func New() *Dispatcher {
@@ -119,6 +156,11 @@ func (d *Dispatcher) Dispatch(raw []byte) (out []byte) {
 		d.mu.Unlock()
 		return encode(fail(req.ID, CodeDuplicateID, "request id already in flight"))
 	}
+	if i := slices.Index(d.early, req.ID); i >= 0 {
+		d.early = slices.Delete(d.early, i, i+1)
+		d.mu.Unlock()
+		return encode(fail(req.ID, CodeCancelled, "request cancelled"))
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	d.inflight[req.ID] = cancel
 	d.mu.Unlock()
@@ -142,10 +184,17 @@ func (d *Dispatcher) Dispatch(raw []byte) (out []byte) {
 }
 
 // Cancel aborts the in-flight request with the given id. It reports whether
-// such a request existed; cancelling an unknown id is not an error.
+// such a request existed; cancelling an unknown id is not an error, and the
+// request is refused if it arrives afterwards.
 func (d *Dispatcher) Cancel(id string) bool {
 	d.mu.Lock()
 	cancel, ok := d.inflight[id]
+	if !ok {
+		d.early = append(d.early, id)
+		if len(d.early) > maxEarlyCancels {
+			d.early = d.early[1:]
+		}
+	}
 	d.mu.Unlock()
 	if ok {
 		cancel()

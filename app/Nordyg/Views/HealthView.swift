@@ -30,13 +30,21 @@ struct HealthView: View {
     }
 }
 
+extension [Verdict] {
+    /// The findings worth listing under a card: the ones that are not ok,
+    /// minus the one the card's verdict already states.
+    func beyond(_ verdict: Verdict?) -> [Verdict] {
+        filter { $0.status != "ok" && $0.message != verdict?.message }
+    }
+}
+
 /// Findings under a card, each with its own severity icon.
 struct FindingList: View {
     var findings: [Verdict]
     /// The card's verdict, which is not repeated as a finding.
-    var verdict: Verdict? = nil
+    var verdict: Verdict?
     var body: some View {
-        let shown = findings.filter { $0.status != "ok" && $0.message != verdict?.message }
+        let shown = findings.beyond(verdict)
         if !shown.isEmpty {
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(shown.enumerated()), id: \.offset) { _, f in
@@ -56,7 +64,7 @@ struct DelegationCard: View {
     var d: HealthDelegation
     var body: some View {
         CheckCard("Delegation", subtitle: d.parent.isEmpty || d.parentNs.isEmpty ? "NS" : "NS at \(proseZone(d.parent)) vs the zone", verdict: d.verdict,
-                  hasDetails: !(d.parentNs.isEmpty && d.childNs.isEmpty) || d.findings.contains { $0.status != "ok" && $0.message != d.verdict.message }) {
+                  hasDetails: !(d.parentNs.isEmpty && d.childNs.isEmpty) || !d.findings.beyond(d.verdict).isEmpty) {
             let names = Array(Set(d.parentNs + d.childNs)).sorted()
             if !names.isEmpty {
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 3) {
@@ -104,17 +112,13 @@ struct ZoneServersCard: View {
                             Image(systemName: VerdictStyle.icon(s.status)).foregroundStyle(VerdictStyle.color(s.status))
                             Text(prose(s.name)).fontWeight(.semibold)
                             Text(s.ip.isEmpty ? "no address" : s.ip).foregroundStyle(s.ip.isEmpty ? Color.red : Color.primary)
-                            Text(s.serial.map(String.init) ?? "–")
-                            if s.skipped {
-                                Text("not checked: no IPv6 route on this Mac").foregroundStyle(.secondary).gridCellColumns(6)
-                            } else {
-                                Check(ok: s.answered && s.authoritative, label: s.answered ? (s.authoritative ? "yes" : (s.rcode == "NOERROR" ? "no" : (s.rcode ?? "?"))) : "no answer")
-                                Check(ok: s.tcp, label: s.tcp ? "yes" : "no")
-                                Check(ok: s.edns, label: s.edns ? "yes" : "no", warnOnly: true)
-                                Check(ok: s.axfr != "allowed", label: axfrLabel(s.axfr), warnOnly: true)
-                                Check(ok: !s.recursion, label: s.recursion ? "open" : "closed", warnOnly: true)
-                                Text(s.answered ? ms(s.rttMs) : "–").foregroundStyle(.secondary)
-                            }
+                            Text(s.serial.map(String.init) ?? "—")
+                            Check(ok: s.answered && s.authoritative, label: s.answered ? (s.authoritative ? "yes" : (s.rcode == "NOERROR" ? "no" : (s.rcode ?? "?"))) : "no answer")
+                            Check(ok: s.tcp, label: s.tcp ? "yes" : "no")
+                            Check(ok: s.edns, label: s.edns ? "yes" : "no", warnOnly: true)
+                            Check(ok: s.axfr != "allowed", label: axfrLabel(s.axfr), warnOnly: true)
+                            Check(ok: !s.recursion, label: s.recursion ? "open" : "closed", warnOnly: true)
+                            Text(s.answered ? ms(s.rttMs) : "—").foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -128,7 +132,7 @@ struct ZoneServersCard: View {
         case "allowed": return "open"
         case "refused": return "refused"
         case "no_answer": return "no answer"
-        default: return "–"
+        default: return "—"
         }
     }
 }
@@ -232,7 +236,10 @@ struct GlueCard: View {
 struct ZoneDNSSECCard: View {
     var section: HealthDNSSEC
     var body: some View {
-        CheckCard("Signing", subtitle: "DNSSEC", verdict: section.verdict, hasDetails: !section.status.isEmpty) {
+        // Without a validation result there is no status, but there can
+        // still be DS records and findings about them.
+        CheckCard("Signing", subtitle: "DNSSEC", verdict: section.verdict,
+                  hasDetails: !section.status.isEmpty || !section.ds.isEmpty || !section.findings.beyond(section.verdict).isEmpty) {
             if !section.status.isEmpty {
                 HStack(spacing: 8) {
                     StatusBadge(status: section.status)
@@ -292,8 +299,8 @@ struct HTTPSCard: View {
                                     GridRow {
                                         Image(systemName: VerdictStyle.icon(Self.status(s))).foregroundStyle(VerdictStyle.color(Self.status(s)))
                                         Text(s.ip).textSelection(.enabled)
-                                        Text(s.chain.first?.issuer ?? "–")
-                                        Text(verbatim: s.chain.first.map { Self.date($0.notAfter) } ?? "–")
+                                        Text(s.chain.first?.issuer ?? "—")
+                                        Text(verbatim: s.chain.first.map { Self.date($0.notAfter) } ?? "—")
                                         Text(Self.label(s)).foregroundStyle(Self.status(s) == "ok" ? Color.secondary : VerdictStyle.color(Self.status(s)))
                                     }
                                 }
@@ -326,7 +333,7 @@ struct HTTPSCard: View {
         if !s.nameMatch { return "wrong name" }
         if s.expiresInDays < 0 { return "expired" }
         if !s.trusted { return "not trusted" }
-        return s.expiresInDays == 1 ? "valid, 1 day left" : "valid, \(s.expiresInDays) days left"
+        return "valid, \(plural(s.expiresInDays, "day")) left"
     }
 
     /// One line on whether the intermediates were checked for revocation,
@@ -340,7 +347,7 @@ struct HTTPSCard: View {
     }
 
     static func dane(_ h: HealthHTTPSHost) -> String {
-        let n = h.tlsa.count == 1 ? "1 TLSA record" : "\(h.tlsa.count) TLSA records"
+        let n = plural(h.tlsa.count, "TLSA record")
         switch (h.tlsaStatus, h.tlsaMatch) {
         case ("secure", true?): return "DANE: \(n), signed, and the certificate matches"
         case ("secure", false?): return "DANE: \(n), signed, but no certificate matches"
@@ -350,8 +357,7 @@ struct HTTPSCard: View {
     }
 
     static func date(_ iso: String) -> String {
-        guard let d = ISO8601DateFormatter().date(from: iso) else { return iso }
-        return d.formatted(date: .abbreviated, time: .omitted)
+        ISODate.parse(iso)?.formatted(date: .abbreviated, time: .omitted) ?? iso
     }
 }
 
@@ -371,10 +377,9 @@ enum HealthReport {
         ]
         for (title, v, findings) in sections {
             s += "## \(title): \(VerdictStyle.label(v.status))\n\n\(v.message)\n\n"
-            for f in findings where f.status != "ok" && f.message != v.message {
-                s += "- \(VerdictStyle.label(f.status)): \(f.message)\n"
-            }
-            if findings.contains(where: { $0.status != "ok" && $0.message != v.message }) { s += "\n" }
+            let listed = findings.beyond(v)
+            for f in listed { s += "- \(VerdictStyle.label(f.status)): \(f.message)\n" }
+            if !listed.isEmpty { s += "\n" }
             if title == "Nameservers", !r.nameservers.servers.isEmpty {
                 s += "| Nameserver | Address | Serial | Answer | TCP | EDNS | AXFR | Recursion |\n|---|---|---:|---|---|---|---|---|\n"
                 for sv in r.nameservers.servers {

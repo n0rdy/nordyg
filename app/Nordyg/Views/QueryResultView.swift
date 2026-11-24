@@ -1,9 +1,13 @@
 import SwiftUI
 
+extension Record {
+    /// The record as one zone-file line, for the clipboard.
+    var zoneLine: String { "\(name) \(ttl) \(qclass) \(type) \(rdata)" }
+}
+
 extension QueryResultView {
     static func sameName(_ a: String, _ b: String) -> Bool {
-        func norm(_ s: String) -> String { s.lowercased().hasSuffix(".") ? String(s.lowercased().dropLast()) : s.lowercased() }
-        return norm(a) == norm(b)
+        a.lowercased().withoutTrailingDot == b.lowercased().withoutTrailingDot
     }
 }
 
@@ -34,7 +38,7 @@ struct QueryResultView: View {
                     Dot()
                     Meta(text: note, help: Glossary.flags(r.message.flags.set))
                 }
-                if results.count == 1, r.message.rcode == "NOERROR", r.exchange.endpoint.transport != "" {
+                if results.count == 1, r.message.rcode == "NOERROR" {
                     Dot()
                     CacheAgePill(message: r.message, question: r.questionSent)
                 }
@@ -106,8 +110,8 @@ struct RecordsView: View {
             }
         } else {
             // With a record selected, the table takes the height its rows need
-            // (at most half), and the detail gets the rest: a fixed split left
-            // three rows with most of the window and the detail squeezed below.
+            // (at most half), and the detail gets the rest. A fixed split would
+            // leave three rows with most of the window and squeeze the detail.
             GeometryReader { geo in
                 let selected = selection.flatMap { id in rows.first { $0.id == id } }
                 VStack(spacing: 0) {
@@ -135,34 +139,34 @@ struct RecordsView: View {
 
     @ViewBuilder
     private func table(_ rows: [RecordRow]) -> some View {
-            Table(rows, selection: $selection) {
-                TableColumn("Section") { Text($0.section).foregroundStyle(.secondary) }.width(min: 60, ideal: 78, max: 100)
-                TableColumn("Type") { TypeBadge(type: $0.record.type) }.width(min: 60, ideal: 72, max: 110)
-                TableColumn("Name") { Text($0.record.name).font(.system(.body, design: .monospaced)) }.width(min: 120, ideal: 220)
-                TableColumn("TTL") { Text(verbatim: "\($0.record.ttl)").monospacedDigit().foregroundStyle(.secondary) }.width(min: 50, ideal: 64, max: 90)
-                TableColumn("Data") { row in
-                    HStack(spacing: 6) {
-                        Text(row.record.rdata).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(.middle)
-                        if row.record.decoded != nil { Image(systemName: "text.magnifyingglass").foregroundStyle(.orange).help("Decoded, select the row for details") }
-                    }
+        Table(rows, selection: $selection) {
+            TableColumn("Section") { Text($0.section).foregroundStyle(.secondary) }.width(min: 60, ideal: 78, max: 100)
+            TableColumn("Type") { TypeBadge(type: $0.record.type) }.width(min: 60, ideal: 72, max: 110)
+            TableColumn("Name") { Text($0.record.name).font(.system(.body, design: .monospaced)) }.width(min: 120, ideal: 220)
+            TableColumn("TTL") { Text(verbatim: "\($0.record.ttl)").monospacedDigit().foregroundStyle(.secondary) }.width(min: 50, ideal: 64, max: 90)
+            TableColumn("Data") { row in
+                HStack(spacing: 6) {
+                    Text(row.record.rdata).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                    if row.record.decoded != nil { Image(systemName: "text.magnifyingglass").foregroundStyle(.orange).help("Decoded, select the row for details") }
                 }
             }
-            // Stripes fill the empty space under a short answer with a grid of
-            // blank rows; without them three records read as three records.
-            .alternatingRowBackgrounds(.disabled)
-            .contextMenu(forSelectionType: RecordRow.ID.self) { ids in
-                if let id = ids.first, let row = rows.first(where: { $0.id == id }) {
-                    Button("Copy data") { Pasteboard.copy(row.record.rdata) }
-                    Button("Copy record") { Pasteboard.copy("\(row.record.name) \(row.record.ttl) IN \(row.record.type) \(row.record.rdata)") }
-                    if let t = row.record.target {
-                        Divider()
-                        Button("Resolve \(prose(t)) (A)") { model.resolve(t) }
-                        Button("Resolve \(prose(t)) (AAAA)") { model.resolve(t, type: "AAAA") }
-                    }
+        }
+        // Stripes fill the empty space under a short answer with a grid of
+        // blank rows; without them three records read as three records.
+        .alternatingRowBackgrounds(.disabled)
+        .contextMenu(forSelectionType: RecordRow.ID.self) { ids in
+            if let id = ids.first, let row = rows.first(where: { $0.id == id }) {
+                Button("Copy data") { Pasteboard.copy(row.record.rdata) }
+                Button("Copy record") { Pasteboard.copy(row.record.zoneLine) }
+                if let t = row.record.target {
+                    Divider()
+                    Button("Resolve \(prose(t)) (A)") { model.resolve(t) }
+                    Button("Resolve \(prose(t)) (AAAA)") { model.resolve(t, type: "AAAA") }
                 }
-            } primaryAction: { ids in
-                if let id = ids.first, let row = rows.first(where: { $0.id == id }), let t = row.record.target { model.resolve(t) }
             }
+        } primaryAction: { ids in
+            if let id = ids.first, let row = rows.first(where: { $0.id == id }), let t = row.record.target { model.resolve(t) }
+        }
     }
 }
 
@@ -172,18 +176,14 @@ struct RawView: View {
     var text: String
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
-            // Pinned to the top-left: a two-axis ScrollView centres content
-            // smaller than itself. Lines keep their full width and scroll
-            // sideways, like a terminal, instead of being cut off.
-            GeometryReader { geo in
-                ScrollView([.vertical, .horizontal]) {
-                    Text(text)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .fixedSize()
-                        .padding(12)
-                        .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
-                }
+            // Lines keep their full width and scroll sideways, like a
+            // terminal, instead of being cut off.
+            PinnedScroll {
+                Text(text)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize()
+                    .padding(12)
             }
             Divider()
             HStack {

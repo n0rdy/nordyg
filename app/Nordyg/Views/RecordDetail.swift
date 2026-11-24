@@ -28,8 +28,7 @@ struct RecordDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text(record.rdata).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                    .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.secondary.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 6))
+                    .inset(fill: Color.secondary.opacity(0.08), fullWidth: true)
 
                 HStack(spacing: 6) {
                     Pill(text: "TTL \(record.ttl)", icon: "clock", mono: true)
@@ -60,7 +59,7 @@ struct RecordDetail: View {
                 Text("Actions").font(.headline)
                 VStack(alignment: .leading, spacing: 6) {
                     Button { Pasteboard.copy(record.rdata) } label: { Label("Copy data", systemImage: "doc.on.doc") }
-                    Button { Pasteboard.copy("\(record.name) \(record.ttl) IN \(record.type) \(record.rdata)") } label: { Label("Copy record", systemImage: "doc.on.doc.fill") }
+                    Button { Pasteboard.copy(record.zoneLine) } label: { Label("Copy record", systemImage: "doc.on.doc.fill") }
                     if let t = record.target {
                         Button { model.resolve(t) } label: { Label("Resolve \(prose(t)) (A)", systemImage: "arrow.turn.down.right") }
                         Button { model.resolve(t, type: "AAAA") } label: { Label("Resolve \(prose(t)) (AAAA)", systemImage: "arrow.turn.down.right") }
@@ -84,14 +83,7 @@ struct DecodedTXTView: View {
                 if let n = decoded["lookup_count"] { Text(verbatim: "\(n.display)/10 lookups").font(.caption) }
             }
             if let problems = decoded["problems"]?.arrayValue, !problems.isEmpty {
-                ForEach(Array(problems.enumerated()), id: \.offset) { _, p in
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: severityIcon(p["severity"]?.stringValue ?? "info"))
-                            .foregroundStyle(severityColor(p["severity"]?.stringValue ?? "info"))
-                        Text(p["message"]?.display ?? "").textSelection(.enabled)
-                    }
-                    .font(.callout)
-                }
+                ForEach(Array(problems.enumerated()), id: \.offset) { _, p in ProblemRow(problem: p) }
             } else {
                 Label("No problems found", systemImage: "checkmark.circle").foregroundStyle(.green).font(.callout)
             }
@@ -104,8 +96,6 @@ struct DecodedTXTView: View {
                     .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
             }
         }
-        .padding(8)
-        .background(Color.orange.opacity(0.07))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .inset(fill: Color.orange.opacity(0.07))
     }
 }

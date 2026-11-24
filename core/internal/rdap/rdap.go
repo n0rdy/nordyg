@@ -11,7 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"regexp"
+	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -33,11 +34,13 @@ type Params struct {
 	Bootstrap []contract.Endpoint `json:"bootstrap"`
 }
 
+// Event is a dated step in the registration, such as registration or expiration.
 type Event struct {
 	Action string `json:"action"`
 	Date   string `json:"date"`
 }
 
+// Contact is a person or organisation attached to the registration, in the roles it holds.
 type Contact struct {
 	Roles  []string `json:"roles"`
 	Handle string   `json:"handle,omitempty"`
@@ -47,6 +50,7 @@ type Contact struct {
 	Phone  string   `json:"phone,omitempty"`
 }
 
+// Registrar is who the domain is registered through.
 type Registrar struct {
 	Name       string `json:"name,omitempty"`
 	IANAID     string `json:"iana_id,omitempty"`
@@ -55,11 +59,13 @@ type Registrar struct {
 	AbusePhone string `json:"abuse_phone,omitempty"`
 }
 
+// StatusInfo is one EPP or RDAP status code with what it means for the owner.
 type StatusInfo struct {
 	Code    string `json:"code"`
 	Meaning string `json:"meaning"`
 }
 
+// DS is a delegation signer record as the registry holds it.
 type DS struct {
 	KeyTag     int    `json:"key_tag"`
 	Algorithm  int    `json:"algorithm"`
@@ -67,6 +73,7 @@ type DS struct {
 	Digest     string `json:"digest"`
 }
 
+// DNSSECInfo is what the registry says about the delegation being signed.
 type DNSSECInfo struct {
 	Known  bool `json:"known"`  // the source said something about DNSSEC
 	Signed bool `json:"signed"` // registry holds DS records for the delegation
@@ -111,7 +118,8 @@ type Op struct {
 	// RefreshBootstrap fetches the live registry once per process.
 	RefreshBootstrap bool
 
-	refreshOnce sync.Once
+	refreshMu sync.Mutex
+	refreshed bool
 }
 
 // New returns an op with the embedded bootstrap.
@@ -121,13 +129,7 @@ func New(c *transport.Client) *Op {
 
 // Register attaches the op to d.
 func (op *Op) Register(d *bridge.Dispatcher) {
-	d.Register("rdap", func(ctx context.Context, raw json.RawMessage) (any, error) {
-		var p Params
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, &bridge.Error{Code: bridge.CodeBadRequest, Message: "params: " + err.Error()}
-		}
-		return op.Run(ctx, p)
-	})
+	d.Register("rdap", bridge.Typed(op.Run))
 }
 
 // Run looks the domain up.
@@ -149,15 +151,7 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	resolver := fetch.NewResolver(op.Client, p.Endpoint, o, p.Bootstrap)
 
 	if op.RefreshBootstrap {
-		op.refreshOnce.Do(func() {
-			rctx, cancel := context.WithTimeout(ctx, 6*time.Second)
-			defer cancel()
-			if resp, err := fetch.Get(rctx, BootstrapURL, "application/json", resolver, op.TLS); err == nil && resp.Status == 200 {
-				if b, err := ParseBootstrap(resp.Body, "iana live"); err == nil {
-					op.Bootstrap.Replace(b)
-				}
-			}
-		})
+		op.refreshBootstrap(ctx, resolver)
 	}
 
 	res := &Result{Domain: domain, Status: []StatusInfo{}, Contacts: []Contact{}, Nameservers: []string{}, DNSNameservers: []string{}, Events: []Event{}, Notices: []string{}, Warnings: []string{}, DNSSEC: DNSSECInfo{DS: []DS{}}, BootstrapSource: op.Bootstrap.Source}
@@ -176,12 +170,32 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 		return nil, &bridge.Error{Code: contract.CodeNetwork, Message: lookupErr.Error()}
 	}
 
-	// Cross-check against the live DNS.
 	op.crossCheck(ctx, res, domain, p, o)
 	return res, nil
 }
 
-// --- RDAP ----------------------------------------------------------------------
+// bootstrapTimeout bounds the live registry fetch, so a slow IANA only
+// delays the first lookup briefly before the embedded copy is used.
+const bootstrapTimeout = 6 * time.Second
+
+// refreshBootstrap fetches the live registry once per process and keeps the
+// embedded copy when that fails. A run the user cancelled does not count as
+// the one attempt.
+func (op *Op) refreshBootstrap(ctx context.Context, resolver fetch.Resolver) {
+	op.refreshMu.Lock()
+	defer op.refreshMu.Unlock()
+	if op.refreshed {
+		return
+	}
+	rctx, cancel := context.WithTimeout(ctx, bootstrapTimeout)
+	defer cancel()
+	if resp, err := fetch.Get(rctx, BootstrapURL, "application/json", resolver, op.TLS); err == nil && resp.Status == http.StatusOK {
+		if b, err := ParseBootstrap(resp.Body, "iana live"); err == nil {
+			op.Bootstrap.Replace(b)
+		}
+	}
+	op.refreshed = ctx.Err() == nil
+}
 
 func (op *Op) viaRDAP(ctx context.Context, res *Result, domain string, servers []string, r fetch.Resolver) error {
 	res.Source = "rdap"
@@ -195,17 +209,17 @@ func (op *Op) viaRDAP(ctx context.Context, res *Result, domain string, servers [
 		}
 		res.Server = base
 		switch {
-		case resp.Status == 404:
+		case resp.Status == http.StatusNotFound:
 			res.Found = false
 			res.Raw = string(resp.Body)
 			return nil
-		case resp.Status != 200:
+		case resp.Status != http.StatusOK:
 			lastErr = fmt.Errorf("%s returned HTTP %d", base, resp.Status)
 			continue
 		}
 		var doc rdapDomain
 		if err := json.Unmarshal(resp.Body, &doc); err != nil {
-			lastErr = fmt.Errorf("%s returned invalid RDAP JSON: %v", base, err)
+			lastErr = fmt.Errorf("%s returned invalid RDAP JSON: %w", base, err)
 			continue
 		}
 		res.Found = true
@@ -216,16 +230,18 @@ func (op *Op) viaRDAP(ctx context.Context, res *Result, domain string, servers [
 		for _, l := range doc.Links {
 			if l.Rel == "related" && strings.Contains(l.Href, "/domain/") && !strings.HasPrefix(l.Href, res.Server) {
 				rr, err := fetch.Get(ctx, l.Href, "application/rdap+json", r, op.TLS)
-				if err != nil || rr.Status != 200 {
+				if err != nil || rr.Status != http.StatusOK {
 					res.Warnings = append(res.Warnings, "registrar RDAP at "+l.Href+" not reachable")
 					break
 				}
 				var reg rdapDomain
-				if json.Unmarshal(rr.Body, &reg) == nil {
-					res.RegistrarServer = l.Href
-					applyDomain(res, &reg, true)
-					res.Raw += "\n\n// registrar response\n" + pretty(rr.Body)
+				if json.Unmarshal(rr.Body, &reg) != nil {
+					res.Warnings = append(res.Warnings, "registrar RDAP at "+l.Href+" returned invalid JSON")
+					break
 				}
+				res.RegistrarServer = l.Href
+				applyDomain(res, &reg, true)
+				res.Raw += "\n\n// registrar response\n" + pretty(rr.Body)
 				break
 			}
 		}
@@ -240,7 +256,6 @@ func (op *Op) viaRDAP(ctx context.Context, res *Result, domain string, servers [
 type rdapLink struct {
 	Rel  string `json:"rel"`
 	Href string `json:"href"`
-	Type string `json:"type"`
 }
 
 type rdapEvent struct {
@@ -351,6 +366,7 @@ func applyEntity(res *Result, ent rdapEntity, supplement bool) {
 			}
 		}
 		for _, l := range ent.Links {
+			// A link into an RDAP service is the entity's own record, not the registrar's website.
 			if (l.Rel == "about" || l.Rel == "self") && res.Registrar.URL == "" && !strings.Contains(l.Href, "/rdap") {
 				res.Registrar.URL = l.Href
 			}
@@ -435,12 +451,7 @@ func vcard(v []any) (name, org, email, phone string) {
 }
 
 func hasRole(roles []string, r string) bool {
-	for _, x := range roles {
-		if strings.EqualFold(x, r) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(roles, func(x string) bool { return strings.EqualFold(x, r) })
 }
 
 func firstNonEmpty(s ...string) string {
@@ -453,11 +464,9 @@ func firstNonEmpty(s ...string) string {
 }
 
 func daysUntil(rfc3339 string) *int {
-	t, err := time.Parse(time.RFC3339Nano, rfc3339)
+	t, err := time.Parse(time.RFC3339, rfc3339)
 	if err != nil {
-		if t, err = time.Parse(time.RFC3339, rfc3339); err != nil {
-			return nil
-		}
+		return nil
 	}
 	d := int(math.Floor(time.Until(t).Hours() / 24))
 	return &d
@@ -513,141 +522,6 @@ var statusMeanings = map[string]string{
 	"removed":                  "Withdrawn from public view.",
 	"proxy":                    "Registered through a proxy service on someone's behalf.",
 }
-
-// --- WHOIS fallback --------------------------------------------------------------
-
-func (op *Op) viaWHOIS(ctx context.Context, res *Result, domain, tld string, r fetch.Resolver) error {
-	res.Source = "whois"
-	iana, err := fetch.TCPQuery(ctx, op.IANAWhois, op.WhoisPort, tld, r)
-	if err != nil {
-		return fmt.Errorf("no RDAP server for .%s and IANA WHOIS unreachable: %v", tld, err)
-	}
-	server := whoisField(iana, "whois")
-	if server == "" {
-		server = whoisField(iana, "refer")
-	}
-	if server == "" {
-		res.Raw = iana
-		res.Warnings = append(res.Warnings, "no RDAP server for ."+tld+" and IANA lists no WHOIS server either")
-		return nil
-	}
-	res.Server = server
-	text, err := fetch.TCPQuery(ctx, server, op.WhoisPort, domain, r)
-	if err != nil {
-		return fmt.Errorf("WHOIS %s: %v", server, err)
-	}
-	res.Raw = text
-	parseWHOIS(res, text)
-	// Registrar-level WHOIS referral (thin registries such as .com).
-	if ref := whoisField(text, "registrar whois server"); ref != "" && !strings.EqualFold(ref, server) {
-		if more, err := fetch.TCPQuery(ctx, ref, op.WhoisPort, domain, r); err == nil {
-			res.RegistrarServer = ref
-			res.Raw += "\n\n% registrar response from " + ref + "\n" + more
-			parseWHOIS(res, more)
-		}
-	}
-	return nil
-}
-
-var whoisNotFound = regexp.MustCompile(`(?im)^\s*(no match|not found|no data found|no entries found|status:\s*free|the queried object does not exist|domain not found|% no match)`)
-
-func whoisField(text, key string) string {
-	re := regexp.MustCompile(`(?im)^\s*` + regexp.QuoteMeta(key) + `\s*:\s*(\S.*)$`)
-	if m := re.FindStringSubmatch(text); m != nil {
-		return strings.TrimSpace(m[1])
-	}
-	return ""
-}
-
-func whoisAll(text string, keys ...string) []string {
-	var out []string
-	for _, k := range keys {
-		re := regexp.MustCompile(`(?im)^\s*` + regexp.QuoteMeta(k) + `\.*\s*:\s*(\S.*)$`)
-		for _, m := range re.FindAllStringSubmatch(text, -1) {
-			out = append(out, strings.TrimSpace(m[1]))
-		}
-	}
-	return out
-}
-
-func parseWHOIS(res *Result, text string) {
-	if whoisNotFound.MatchString(text) && !res.Found {
-		res.Found = false
-		return
-	}
-	res.Found = true
-	if res.Registrar.Name == "" {
-		res.Registrar.Name = firstNonEmpty(whoisField(text, "registrar"), whoisField(text, "sponsoring registrar"), whoisField(text, "registrar name"))
-	}
-	if res.Registrar.IANAID == "" {
-		res.Registrar.IANAID = whoisField(text, "registrar iana id")
-	}
-	if res.Registrar.URL == "" {
-		res.Registrar.URL = whoisField(text, "registrar url")
-	}
-	if res.Registrar.AbuseEmail == "" {
-		res.Registrar.AbuseEmail = whoisField(text, "registrar abuse contact email")
-	}
-	if res.Registered == "" {
-		res.Registered = firstNonEmpty(whoisAll(text, "creation date", "created", "registered", "registration date", "created on", "domain registration date")...)
-	}
-	if res.Expires == "" {
-		res.Expires = firstNonEmpty(whoisAll(text, "registry expiry date", "registrar registration expiration date", "expiry date", "expiration date", "expires", "expire", "paid-till", "renewal date")...)
-		if res.Expires != "" {
-			res.ExpiresInDays = daysUntil(normalizeDate(res.Expires))
-		}
-	}
-	if res.Updated == "" {
-		res.Updated = firstNonEmpty(whoisAll(text, "updated date", "last updated", "changed", "last modified", "modified")...)
-	}
-	if len(res.Nameservers) == 0 {
-		seen := map[string]bool{}
-		for _, ns := range whoisAll(text, "name server", "nserver", "nameserver", "name servers") {
-			ns = strings.ToLower(strings.Fields(ns)[0])
-			ns = strings.TrimSuffix(ns, ".")
-			if ns != "" && !seen[ns] {
-				seen[ns] = true
-				res.Nameservers = append(res.Nameservers, ns)
-			}
-		}
-		sort.Strings(res.Nameservers)
-	}
-	if len(res.Status) == 0 {
-		for _, s := range whoisAll(text, "domain status", "status") {
-			code := strings.Fields(s)[0]
-			res.Status = append(res.Status, StatusInfo{Code: code, Meaning: statusMeaning(code)})
-		}
-	}
-	if ds := whoisField(text, "dnssec"); ds != "" {
-		res.DNSSEC.Known = true
-		res.DNSSEC.Signed = strings.Contains(strings.ToLower(ds), "signed") && !strings.Contains(strings.ToLower(ds), "unsigned")
-	}
-	if len(res.Contacts) == 0 {
-		for _, role := range []string{"registrant", "admin", "tech"} {
-			c := Contact{Roles: []string{role}}
-			c.Name = whoisField(text, role+" name")
-			c.Org = whoisField(text, role+" organization")
-			c.Email = whoisField(text, role+" email")
-			c.Phone = whoisField(text, role+" phone")
-			if c.Name != "" || c.Org != "" || c.Email != "" {
-				res.Contacts = append(res.Contacts, c)
-			}
-		}
-	}
-}
-
-// normalizeDate accepts the common WHOIS date shapes and returns RFC 3339.
-func normalizeDate(s string) string {
-	s = strings.TrimSpace(s)
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05Z0700", "2006-01-02 15:04:05", "2006-01-02", "02-Jan-2006", "02.01.2006", "2006.01.02", "2006/01/02", "January 2 2006", "Jan 2 2006"} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return t.UTC().Format(time.RFC3339)
-		}
-	}
-	return s
-}
-
-// --- cross-check with the DNS ---------------------------------------------------
 
 func (op *Op) crossCheck(ctx context.Context, res *Result, domain string, p Params, o contract.Effective) {
 	o.RecursionDesired = true

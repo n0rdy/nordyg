@@ -37,6 +37,7 @@ func TestGroupsAgreeingAndDisagreeingResolvers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testdns.Sample(t, "compare", res)
 	if res.Consistent || len(res.Results) != 4 || len(res.Groups) != 3 {
 		t.Fatalf("%+v", res)
 	}
@@ -82,7 +83,7 @@ func TestNXDOMAINGroupsSeparatelyFromAnswers(t *testing.T) {
 func TestValidation(t *testing.T) {
 	op := newOp()
 	_, err := op.Run(context.Background(), Params{Question: contract.Question{Name: "x", Type: "A"}})
-	if code(err) != bridge.CodeBadRequest {
+	if testdns.Code(err) != bridge.CodeBadRequest {
 		t.Fatalf("empty endpoints: %v", err)
 	}
 	_, err = op.Run(context.Background(), Params{Question: contract.Question{Name: "x", Type: "A"}, Endpoints: []contract.Endpoint{{Transport: "udp", Address: "1.1.1.1:53"}, {Transport: "dot"}}})
@@ -107,7 +108,7 @@ func TestKeyIgnoresTTLAndOrder(t *testing.T) {
 		m := &contract.Message{Rcode: "NOERROR"}
 		for _, s := range rrs {
 			rr, _ := dns.NewRR(s)
-			m.Answer = append(m.Answer, contract.Record{Type: dns.TypeToString[rr.Header().Rrtype], Rdata: rr.String()[len(rr.Header().String()):]})
+			m.Answer = append(m.Answer, contract.Record{Type: dns.TypeToString[rr.Header().Rrtype], TTL: rr.Header().Ttl, Rdata: rr.String()[len(rr.Header().String()):]})
 		}
 		return m
 	}
@@ -133,17 +134,6 @@ func TestThroughEnvelope(t *testing.T) {
 	if !res.Consistent || res.Groups[0].Answers[0] != "192.0.2.1" {
 		t.Fatalf("%s", resp.Result)
 	}
-}
-
-func code(err error) string {
-	var e *bridge.Error
-	if errors.As(err, &e) {
-		return e.Code
-	}
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 func TestKeyIgnoresSignatures(t *testing.T) {

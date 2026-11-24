@@ -13,19 +13,25 @@ import (
 
 	"github.com/n0rdy/nordyg/core/internal/certs"
 	"github.com/n0rdy/nordyg/core/internal/dnssec"
+	"github.com/n0rdy/nordyg/core/internal/resolve"
+	"github.com/n0rdy/nordyg/core/internal/verdict"
 )
 
 // DANE for mail (RFC 7672): TLSA records at _25._tcp.<mx>, which senders use
 // only when both the MX records and the TLSA records are DNSSEC-secure.
 
+// DANEServer is one address of an MX host and whether its certificate matches the TLSA records.
 type DANEServer struct {
 	IP      string `json:"ip"`
 	Checked bool   `json:"checked"`
 	Match   bool   `json:"match"`
 	Skipped bool   `json:"skipped,omitempty"`
 	Error   string `json:"error,omitempty"`
+
+	noSTARTTLS bool
 }
 
+// DANEHost is one MX host: its TLSA records and the servers probed for them.
 type DANEHost struct {
 	Exchange string `json:"exchange"`
 	// TLSA records as Nordyg found them and their DNSSEC status as it
@@ -35,8 +41,12 @@ type DANEHost struct {
 	// Error is set when the TLSA lookup failed, so nothing is known.
 	Error   string       `json:"error,omitempty"`
 	Servers []DANEServer `json:"servers"`
+
+	// usable are the records mail senders act on: DANE-TA (2) and DANE-EE (3).
+	usable []*dns.TLSA
 }
 
+// DANESection is DANE across the MX hosts.
 type DANESection struct {
 	// MXStatus is the DNSSEC status of the MX records; checked only when
 	// some host publishes TLSA records.
@@ -44,6 +54,8 @@ type DANESection struct {
 	Hosts    []DANEHost `json:"hosts"`
 	Findings []Verdict  `json:"findings"`
 	Verdict  Verdict    `json:"verdict"`
+
+	off bool // DANE does not apply or no TLSA records are published
 }
 
 // Validator is the DNSSEC validator; *dnssec.Validator satisfies it.
@@ -67,13 +79,14 @@ func (op *Op) validator() Validator {
 	return dnssec.New()
 }
 
-func (op *Op) checkDANE(ctx context.Context, r *resolver, domain string, mx MXSection) DANESection {
+func (op *Op) checkDANE(ctx context.Context, r *resolve.Resolver, domain string, mx MXSection) DANESection {
 	sec := DANESection{Hosts: []DANEHost{}, Findings: []Verdict{}}
 	if mx.NullMX {
-		sec.Verdict = Verdict{Info, "not applicable: the domain accepts no mail"}
+		sec.off = true
+		sec.Verdict = Verdict{Status: Info, Message: "not applicable: the domain accepts no mail"}
 		return sec
 	}
-	f := dnssec.Shared(&dnssec.Recursive{Client: r.client, Endpoint: r.ep, Options: r.o, Bootstrap: r.boot})
+	f := dnssec.Shared(&dnssec.Recursive{Client: r.Client, Endpoint: r.Endpoint, Options: r.Options, Bootstrap: r.Bootstrap})
 	v := op.validator()
 
 	// TLSA for every MX host, in MX order.
@@ -93,6 +106,9 @@ func (op *Op) checkDANE(ctx context.Context, r *resolver, domain string, mx MXSe
 			for _, rr := range m.Answer {
 				if t, ok := rr.(*dns.TLSA); ok {
 					dh.TLSA = append(dh.TLSA, strings.TrimPrefix(t.String(), t.Hdr.String()))
+					if t.Usage == 2 || t.Usage == 3 {
+						dh.usable = append(dh.usable, t)
+					}
 				}
 			}
 			if len(dh.TLSA) > 0 {
@@ -116,10 +132,11 @@ func (op *Op) checkDANE(ctx context.Context, r *resolver, domain string, mx MXSe
 	}
 	switch {
 	case withTLSA == 0 && failed == 0:
-		sec.Verdict = Verdict{Info, "not configured. DANE is optional and, with DNSSEC, lets senders check the certificate of each MX host"}
+		sec.off = true
+		sec.Verdict = Verdict{Status: Info, Message: "not configured. DANE is optional and, with DNSSEC, lets senders check the certificate of each MX host"}
 		return sec
 	case withTLSA == 0:
-		sec.Verdict = Verdict{Warn, "the TLSA records could not be looked up through this resolver. Run the check again"}
+		sec.Verdict = Verdict{Status: Warn, Message: "the TLSA records could not be looked up through this resolver. Run the check again"}
 		return sec
 	}
 
@@ -152,10 +169,10 @@ func (op *Op) checkDANE(ctx context.Context, r *resolver, domain string, mx MXSe
 	var probes sync.WaitGroup
 	for i := range sec.Hosts {
 		probes.Add(1)
-		go func(i int) {
+		go func() {
 			defer probes.Done()
 			op.probeDANE(ctx, in, &sec.Hosts[i], mx.Hosts[i].Addresses)
-		}(i)
+		}()
 	}
 	probes.Wait()
 	judgeDANE(&sec, withTLSA, failed)
@@ -169,15 +186,7 @@ func (op *Op) probeDANE(ctx context.Context, in *certs.Inspector, h *DANEHost, a
 	if h.Status != dnssec.Secure {
 		return
 	}
-	var records []*dns.TLSA
-	for _, s := range h.TLSA {
-		if rr, err := dns.NewRR("x. 300 IN TLSA " + s); err == nil {
-			if t := rr.(*dns.TLSA); t.Usage == 2 || t.Usage == 3 {
-				records = append(records, t)
-			}
-		}
-	}
-	if len(records) == 0 {
+	if len(h.usable) == 0 {
 		return
 	}
 	ips := append([]string(nil), addrs...)
@@ -189,7 +198,7 @@ func (op *Op) probeDANE(ctx context.Context, in *certs.Inspector, h *DANEHost, a
 	var wg sync.WaitGroup
 	for i, ip := range ips {
 		wg.Add(1)
-		go func(i int, ip string) {
+		go func() {
 			defer wg.Done()
 			s := DANEServer{IP: ip}
 			st, err := in.HandshakeSMTP(ctx, op.smtpAddr(ip), strings.TrimSuffix(h.Exchange, "."))
@@ -203,12 +212,13 @@ func (op *Op) probeDANE(ctx context.Context, in *certs.Inspector, h *DANEHost, a
 			case err != nil:
 				s.Checked = true
 				s.Error = err.Error()
+				s.noSTARTTLS = errors.Is(err, certs.ErrNoSTARTTLS)
 			default:
 				s.Checked = true
-				s.Match = certs.MatchTLSA(records, st.PeerCertificates, false)
+				s.Match = certs.MatchTLSA(h.usable, st.PeerCertificates, false)
 			}
 			h.Servers[i] = s
-		}(i, ip)
+		}()
 	}
 	wg.Wait()
 }
@@ -241,11 +251,7 @@ func judgeDANE(sec *DANESection, withTLSA, failed int) {
 			sec.add(Warn, fmt.Sprintf("%s: the TLSA records could not be DNSSEC-validated through this resolver, so DANE was not checked for it. Run the check again", name))
 			continue
 		}
-		usable := false
-		for _, s := range h.TLSA {
-			usable = usable || strings.HasPrefix(s, "2 ") || strings.HasPrefix(s, "3 ")
-		}
-		if !usable {
+		if len(h.usable) == 0 {
 			sec.add(Warn, fmt.Sprintf("%s publishes only TLSA usages 0 or 1, which mail senders do not use (RFC 7672)", name))
 			continue
 		}
@@ -254,7 +260,7 @@ func judgeDANE(sec *DANESection, withTLSA, failed int) {
 			case s.Skipped:
 			case !s.Checked:
 				unreached++
-			case s.Error == certs.ErrNoSTARTTLS.Error():
+			case s.noSTARTTLS:
 				reached++
 				sec.add(Fail, fmt.Sprintf("%s (%s) does not offer STARTTLS, so DANE senders refuse to deliver", name, s.IP))
 			case s.Error != "":
@@ -282,23 +288,10 @@ func judgeDANE(sec *DANESection, withTLSA, failed int) {
 }
 
 func (s *DANESection) add(status, msg string) {
-	s.Findings = append(s.Findings, Verdict{status, msg})
+	s.Findings = append(s.Findings, Verdict{Status: status, Message: msg})
 }
 
 // settle sets the verdict to the worst finding, or to ok with okMsg.
 func (s *DANESection) settle(okMsg string) {
-	rank := map[string]int{OK: 0, Info: 1, Warn: 2, Fail: 3}
-	worst, more := Verdict{OK, okMsg}, 0
-	for _, f := range s.Findings {
-		switch {
-		case rank[f.Status] > rank[worst.Status]:
-			worst, more = f, 0
-		case rank[f.Status] == rank[worst.Status] && worst.Status != OK:
-			more++
-		}
-	}
-	if more > 0 {
-		worst.Message += fmt.Sprintf(" (and %d more)", more)
-	}
-	s.Verdict = worst
+	s.Verdict = verdict.Worst(s.Findings, okMsg)
 }

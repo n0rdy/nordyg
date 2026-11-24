@@ -115,10 +115,7 @@ struct MacResolversSheet: View {
             }
         }
         .font(.callout)
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .card(fill: Color.secondary.opacity(0.08))
     }
 
     private func everyOther(_ plan: MacDNSPlan) -> String {
@@ -126,19 +123,17 @@ struct MacResolversSheet: View {
         let subject = plan.splitRules.isEmpty ? "This Mac sends every domain" : "Every other domain goes"
         switch order.count {
         case 0: return "This Mac has no DNS resolver configured right now."
-        case 1: return plan.splitRules.isEmpty ? "This Mac sends every domain to \(order[0])." : "Every other domain goes to \(order[0])."
+        case 1: return "\(subject) to \(order[0])."
         default:
             let rest = order.dropFirst().joined(separator: ", then ")
-            return plan.splitRules.isEmpty
-                ? "\(subject) to \(order[0]) first, and to \(rest) if that fails."
-                : "\(subject) to \(order[0]) first, and to \(rest) if that fails."
+            return "\(subject) to \(order[0]) first, and to \(rest) if that fails."
         }
     }
 
     private func use(_ ns: String) {
         let addr = SystemResolvers.hostPort(ns, 53)
         model.selected = model.allEndpoints.first { $0.transport == "udp" && $0.address == addr }
-            ?? Endpoint(transport: "udp", address: addr, tlsName: nil, url: nil, method: nil, label: "System \(ns)")
+            ?? Endpoint(transport: "udp", address: addr, label: "System \(ns)")
         model.mode = .query
         model.severalResolvers = false
         dismiss()

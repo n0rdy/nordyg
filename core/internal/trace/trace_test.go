@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/miekg/dns"
 
@@ -15,86 +16,69 @@ import (
 	"github.com/n0rdy/nordyg/core/internal/transport"
 )
 
-// Fixture: root (192.0.2.1) delegates test. to ns.test (192.0.2.2), which
-// delegates example.test to ns.example.test (192.0.2.3, glued), noglue.test to
-// ns.example.test (no glue) and dead.test to ns.dead.test (192.0.2.9, silent).
-func rr(t *testing.T, s string) dns.RR {
-	t.Helper()
-	r, err := dns.NewRR(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return r
-}
-
-func reply(q *dns.Msg) *dns.Msg {
-	m := new(dns.Msg)
-	m.SetReply(q)
-	if opt := q.IsEdns0(); opt != nil {
-		m.SetEdns0(1232, opt.Do())
-	}
-	return m
-}
-
+// setup builds the fixture: root (192.0.2.1) delegates test. to ns.test
+// (192.0.2.2), which delegates example.test to ns.example.test (192.0.2.3,
+// glued), noglue.test to ns.example.test (no glue) and dead.test to
+// ns.dead.test (192.0.2.9, silent).
 func setup(t *testing.T) (*Op, string) {
 	t.Helper()
 	root := testdns.UDP(t, func(q *dns.Msg) *dns.Msg {
-		m := reply(q)
+		m := testdns.Reply(q)
 		name := strings.ToLower(q.Question[0].Name)
 		switch {
 		case name == ".":
 			m.Authoritative = true
-			m.Answer = []dns.RR{rr(t, ". 300 IN NS root-hint.")}
+			m.Answer = []dns.RR{testdns.RR(t, ". 300 IN NS root-hint.")}
 		case dns.IsSubDomain("test.", name):
-			m.Ns = []dns.RR{rr(t, "test. 300 IN NS ns.test."), rr(t, "test. 300 IN DS 12345 13 2 ABCDEF")}
-			m.Extra = append(m.Extra, rr(t, "ns.test. 300 IN A 192.0.2.2"), rr(t, "ns.test. 300 IN AAAA 2001:db8::2"))
+			m.Ns = []dns.RR{testdns.RR(t, "test. 300 IN NS ns.test."), testdns.RR(t, "test. 300 IN DS 12345 13 2 ABCDEF")}
+			m.Extra = append(m.Extra, testdns.RR(t, "ns.test. 300 IN A 192.0.2.2"), testdns.RR(t, "ns.test. 300 IN AAAA 2001:db8::2"))
 		default:
 			m.Authoritative = true
 			m.Rcode = dns.RcodeNameError
-			m.Ns = []dns.RR{rr(t, ". 300 IN SOA a.root. n. 1 1 1 1 1")}
+			m.Ns = []dns.RR{testdns.RR(t, ". 300 IN SOA a.root. n. 1 1 1 1 1")}
 		}
 		return m
 	})
 	tld := testdns.UDP(t, func(q *dns.Msg) *dns.Msg {
-		m := reply(q)
+		m := testdns.Reply(q)
 		name := strings.ToLower(q.Question[0].Name)
 		switch {
 		case dns.IsSubDomain("example.test.", name):
-			m.Ns = []dns.RR{rr(t, "example.test. 300 IN NS ns.example.test.")}
-			m.Extra = append(m.Extra, rr(t, "ns.example.test. 300 IN A 192.0.2.3"))
+			m.Ns = []dns.RR{testdns.RR(t, "example.test. 300 IN NS ns.example.test.")}
+			m.Extra = append(m.Extra, testdns.RR(t, "ns.example.test. 300 IN A 192.0.2.3"))
 		case dns.IsSubDomain("noglue.test.", name):
-			m.Ns = []dns.RR{rr(t, "noglue.test. 300 IN NS ns.example.test.")}
+			m.Ns = []dns.RR{testdns.RR(t, "noglue.test. 300 IN NS ns.example.test.")}
 		case dns.IsSubDomain("dead.test.", name):
-			m.Ns = []dns.RR{rr(t, "dead.test. 300 IN NS ns.dead.test.")}
-			m.Extra = append(m.Extra, rr(t, "ns.dead.test. 300 IN A 192.0.2.9"))
+			m.Ns = []dns.RR{testdns.RR(t, "dead.test. 300 IN NS ns.dead.test.")}
+			m.Extra = append(m.Extra, testdns.RR(t, "ns.dead.test. 300 IN A 192.0.2.9"))
 		case dns.IsSubDomain("lame.test.", name):
 			m.Rcode = dns.RcodeRefused
 		default:
 			m.Authoritative = true
 			m.Rcode = dns.RcodeNameError
-			m.Ns = []dns.RR{rr(t, "test. 300 IN SOA ns.test. n. 1 1 1 1 1")}
+			m.Ns = []dns.RR{testdns.RR(t, "test. 300 IN SOA ns.test. n. 1 1 1 1 1")}
 		}
 		return m
 	})
 	auth := testdns.UDP(t, func(q *dns.Msg) *dns.Msg {
-		m := reply(q)
+		m := testdns.Reply(q)
 		m.Authoritative = true
 		name := strings.ToLower(q.Question[0].Name)
 		qt := q.Question[0].Qtype
 		switch {
 		case name == "example.test." && qt == dns.TypeA:
-			m.Answer = []dns.RR{rr(t, "example.test. 300 IN A 192.0.2.10")}
+			m.Answer = []dns.RR{testdns.RR(t, "example.test. 300 IN A 192.0.2.10")}
 		case name == "ns.example.test." && qt == dns.TypeA:
-			m.Answer = []dns.RR{rr(t, "ns.example.test. 300 IN A 192.0.2.3")}
+			m.Answer = []dns.RR{testdns.RR(t, "ns.example.test. 300 IN A 192.0.2.3")}
 		case name == "www.example.test.":
-			m.Answer = []dns.RR{rr(t, "www.example.test. 300 IN CNAME example.test.")}
+			m.Answer = []dns.RR{testdns.RR(t, "www.example.test. 300 IN CNAME example.test.")}
 		case name == "noglue.test." && qt == dns.TypeA:
-			m.Answer = []dns.RR{rr(t, "noglue.test. 300 IN A 192.0.2.11")}
+			m.Answer = []dns.RR{testdns.RR(t, "noglue.test. 300 IN A 192.0.2.11")}
 		case name == "example.test." && qt == dns.TypeMX:
-			m.Ns = []dns.RR{rr(t, "example.test. 300 IN SOA ns.example.test. n. 1 1 1 1 1")}
+			m.Ns = []dns.RR{testdns.RR(t, "example.test. 300 IN SOA ns.example.test. n. 1 1 1 1 1")}
 		default:
 			m.Rcode = dns.RcodeNameError
-			m.Ns = []dns.RR{rr(t, "example.test. 300 IN SOA ns.example.test. n. 1 1 1 1 1")}
+			m.Ns = []dns.RR{testdns.RR(t, "example.test. 300 IN SOA ns.example.test. n. 1 1 1 1 1")}
 		}
 		return m
 	})
@@ -119,6 +103,7 @@ func TestTraceFollowsReferrals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testdns.Sample(t, "trace", res)
 	if len(res.Hops) != 3 {
 		t.Fatalf("hops: %d", len(res.Hops))
 	}
@@ -155,6 +140,29 @@ func TestTraceFollowsCNAMEByRestarting(t *testing.T) {
 	// root, tld, auth (CNAME), root, tld, auth (A)
 	if len(res.Hops) != 6 || res.Hops[2].Message.Answer[0].Type != "CNAME" || res.Hops[3].Zone != "." || res.Final.Answer[0].Fields["address"] != "192.0.2.10" {
 		t.Fatalf("hops=%d final=%+v", len(res.Hops), res.Final)
+	}
+}
+
+func TestCNAMETarget(t *testing.T) {
+	answer := func(records ...string) *dns.Msg {
+		m := new(dns.Msg)
+		for _, r := range records {
+			m.Answer = append(m.Answer, testdns.RR(t, r))
+		}
+		return m
+	}
+	for name, tc := range map[string]struct {
+		m    *dns.Msg
+		want string
+	}{
+		"chain listed out of order": {answer("b.test. 60 IN CNAME c.test.", "A.test. 60 IN CNAME b.test."), "c.test."},
+		"no CNAME for the name":     {answer("other.test. 60 IN CNAME c.test."), "a.test."},
+		"points at itself":          {answer("a.test. 60 IN CNAME a.test."), "a.test."},
+		"two names in a loop":       {answer("a.test. 60 IN CNAME b.test.", "b.test. 60 IN CNAME a.test."), "a.test."},
+	} {
+		if got := cnameTarget(tc.m, "a.test."); got != tc.want {
+			t.Errorf("%s: got %s, want %s", name, got, tc.want)
+		}
 	}
 }
 
@@ -213,22 +221,25 @@ func TestTraceDeadEndKeepsHops(t *testing.T) {
 func TestTraceValidation(t *testing.T) {
 	op, _ := setup(t)
 	_, err := op.Run(context.Background(), Params{Question: contract.Question{Name: "x", Type: "A"}, RootHints: []string{"192.0.2.1"}})
-	if code(err) != bridge.CodeBadRequest {
+	if testdns.Code(err) != bridge.CodeBadRequest {
 		t.Fatalf("root hint without port: %v", err)
 	}
 	_, err = op.Run(context.Background(), Params{Question: contract.Question{Name: "x", Type: "ZZ"}})
-	if code(err) != contract.CodeUnknownType {
+	if testdns.Code(err) != contract.CodeUnknownType {
 		t.Fatal(err)
 	}
 }
 
 func TestTraceCancel(t *testing.T) {
 	op, root := setup(t)
+	// The nameserver of dead.test never answers, so the trace is waiting on
+	// it when the cancel lands.
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := op.Run(ctx, params(root, "example.test", "A"))
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("want cancelled, got %v", err)
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := op.Run(ctx, params(root, "dead.test", "A"))
+	if !errors.Is(err, context.Canceled) || time.Since(start) > 2*time.Second {
+		t.Fatalf("want context.Canceled soon after the cancel, got %v after %s", err, time.Since(start))
 	}
 }
 
@@ -266,15 +277,4 @@ func TestDefaultRootsAreValidEndpoints(t *testing.T) {
 			}
 		}
 	}
-}
-
-func code(err error) string {
-	var e *bridge.Error
-	if errors.As(err, &e) {
-		return e.Code
-	}
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }

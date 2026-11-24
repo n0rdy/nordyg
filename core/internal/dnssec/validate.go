@@ -9,6 +9,8 @@ import (
 	"github.com/miekg/dns"
 
 	"github.com/n0rdy/nordyg/core/internal/contract"
+	"github.com/n0rdy/nordyg/core/internal/msg"
+	"github.com/n0rdy/nordyg/core/internal/prose"
 )
 
 // Fetcher obtains a DNS message for (name, type) with DO set. Recursive and
@@ -17,22 +19,14 @@ type Fetcher interface {
 	Fetch(ctx context.Context, name string, qtype uint16) (*dns.Msg, error)
 }
 
-// Validator holds the trust anchors and the clock.
+// Validator holds the trust anchors.
 type Validator struct {
 	Anchors []*dns.DS
-	Now     func() time.Time
 }
 
 // New returns a validator with the embedded root anchors.
 func New() *Validator {
 	return &Validator{Anchors: RootAnchors()}
-}
-
-func (v *Validator) now() time.Time {
-	if v.Now != nil {
-		return v.Now()
-	}
-	return time.Now()
 }
 
 const maxNested = 3
@@ -54,7 +48,7 @@ type walker struct {
 }
 
 func (v *Validator) validate(ctx context.Context, f Fetcher, qname string, qtype uint16, answer *dns.Msg, depth int) (*Result, error) {
-	w := &walker{v: v, f: f, now: v.now(), res: &Result{Status: Indeterminate, Chain: []Link{}, AnswerSignatures: []Signature{}, Related: []Related{}}}
+	w := &walker{v: v, f: f, now: time.Now(), res: &Result{Status: Indeterminate, Chain: []Link{}, AnswerSignatures: []Signature{}, Related: []Related{}}}
 	if err := w.root(ctx); err != nil {
 		return w.res, ctxErr(ctx, err)
 	}
@@ -121,7 +115,7 @@ func (w *walker) root(ctx context.Context) error {
 	sigs, sig := verifySetSig(set, anchored, ".", w.now)
 	link.Signatures = sigs
 	if sig == nil {
-		link.Reason = "root DNSKEY RRset is not signed by the trust anchor key"
+		link.Reason = "root DNSKEY RRset is not validly signed by the trust anchor key: " + firstError(sigs)
 		w.res.Chain = append(w.res.Chain, link)
 		w.fail(Bogus, link.Reason)
 		return nil
@@ -137,7 +131,7 @@ func (w *walker) root(ctx context.Context) error {
 			break
 		}
 	}
-	w.res.TrustAnchor = &KeyRef{KeyTag: a.KeyTag(), Algorithm: a.Algorithm, AlgorithmName: algName(a.Algorithm), Role: role(a.Flags), TrustAnchor: true}
+	w.res.TrustAnchor = &KeyRef{KeyTag: a.KeyTag(), Algorithm: a.Algorithm, AlgorithmName: msg.AlgName(a.Algorithm), Role: msg.KeyRole(a.Flags), TrustAnchor: true}
 	w.zone, w.keys = ".", keys
 	return nil
 }
@@ -163,14 +157,18 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 			switch p.kind {
 			case proofNoData:
 				if p.delegation {
-					reason := "unsigned delegation: no DS record for " + prose(cand) + ", proven by an NSEC record in " + proseZone(w.zone)
+					record := "NSEC"
+					if p.nsec3 {
+						record = "NSEC3"
+					}
+					reason := "unsigned delegation: no DS record for " + prose.Name(cand) + ", proven by an " + record + " record in " + prose.Zone(w.zone)
 					w.res.Chain = append(w.res.Chain, Link{Zone: cand, Status: Insecure, Reason: reason, DNSKeys: []KeyRef{}, DS: []DSRef{}, Signatures: p.signatures})
 					w.fail(Insecure, reason)
 					return nil
 				}
 				// Not a zone cut; keep descending in the same zone.
 			case proofOptOut:
-				reason := "unsigned delegation: no DS record for " + prose(cand) + ", proven by an NSEC3 opt-out record in " + proseZone(w.zone) + " (RFC 5155)"
+				reason := "unsigned delegation: no DS record for " + prose.Name(cand) + ", proven by an NSEC3 opt-out record in " + prose.Zone(w.zone) + " (RFC 5155)"
 				w.res.Chain = append(w.res.Chain, Link{Zone: cand, Status: Insecure, Reason: reason, DNSKeys: []KeyRef{}, DS: []DSRef{}, Signatures: p.signatures})
 				w.fail(Insecure, reason)
 				return nil
@@ -178,10 +176,10 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 				// The name does not exist; nothing below it can be a cut.
 				return nil
 			case proofBogus:
-				w.fail(Bogus, "denial of DS for "+prose(cand)+": "+p.reason)
+				w.fail(Bogus, "denial of DS for "+prose.Name(cand)+": "+p.reason)
 				return nil
 			default:
-				w.fail(Indeterminate, "cannot prove whether "+prose(cand)+" has a DS record: "+p.reason)
+				w.fail(Indeterminate, "cannot prove whether "+prose.Name(cand)+" has a DS record: "+p.reason)
 				return nil
 			}
 			continue
@@ -191,7 +189,7 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 		sigs, ok := verifySet(dsSet, w.keys, w.zone, w.now)
 		link.Signatures = append(link.Signatures, sigs...)
 		if !ok {
-			link.Reason = "DS RRset for " + prose(cand) + " is not validly signed by " + proseZone(w.zone)
+			link.Reason = "DS RRset for " + prose.Name(cand) + " is not validly signed by " + prose.Zone(w.zone) + ": " + firstError(sigs)
 			w.res.Chain = append(w.res.Chain, link)
 			w.fail(Bogus, link.Reason)
 			return nil
@@ -213,7 +211,7 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 			return nil
 		}
 		if len(matched) == 0 {
-			link.Reason = "no DNSKEY of " + prose(cand) + " matches its DS records"
+			link.Reason = "no DNSKEY of " + prose.Name(cand) + " matches its DS records"
 			w.res.Chain = append(w.res.Chain, link)
 			w.fail(Bogus, link.Reason)
 			return nil
@@ -222,7 +220,7 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 		ksigs, ok := verifySet(keySet, matched, cand, w.now)
 		link.Signatures = append(link.Signatures, ksigs...)
 		if !ok {
-			link.Reason = "DNSKEY RRset of " + prose(cand) + " is not signed by a key matching its DS"
+			link.Reason = "DNSKEY RRset of " + prose.Name(cand) + " is not validly signed by a key matching its DS: " + firstError(ksigs)
 			w.res.Chain = append(w.res.Chain, link)
 			w.fail(Bogus, link.Reason)
 			return nil
@@ -384,24 +382,4 @@ func sigsToRR(sigs []*dns.RRSIG) []dns.RR {
 		out = append(out, s)
 	}
 	return out
-}
-
-// prose renders a name for human-readable messages: no trailing dot.
-func prose(name string) string {
-	if name == "." {
-		return "the root"
-	}
-	return strings.TrimSuffix(name, ".")
-}
-
-// proseZone renders a zone for prose so a TLD does not read like a word:
-// "." → "the root zone", "me." → "the .me zone", "example.com." → "the zone example.com".
-func proseZone(zone string) string {
-	switch dns.CountLabel(zone) {
-	case 0:
-		return "the root zone"
-	case 1:
-		return "the ." + strings.TrimSuffix(zone, ".") + " zone"
-	}
-	return "the zone " + strings.TrimSuffix(zone, ".")
 }

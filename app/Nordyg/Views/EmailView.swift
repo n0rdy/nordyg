@@ -33,7 +33,6 @@ struct CheckCard<Content: View>: View {
     var title: String
     var subtitle: String
     var verdict: Verdict
-    var startOpen: Bool = false
     /// False when there is nothing behind the verdict: no Details button
     /// that opens onto an empty box.
     var hasDetails: Bool = true
@@ -135,7 +134,7 @@ struct SPFCard: View {
                         VStack(alignment: .leading, spacing: 1) {
                             HStack(spacing: 8) {
                                 Text(prose(inc.name)).fontWeight(.semibold)
-                                Text(verbatim: "\(inc.lookups) lookup\(inc.lookups == 1 ? "" : "s")").foregroundStyle(.secondary)
+                                Text(verbatim: plural(inc.lookups, "lookup")).foregroundStyle(.secondary)
                                 if let e = inc.error { Text(e).foregroundStyle(.red) }
                             }
                             if let r = inc.record { Text(r).foregroundStyle(.secondary).textSelection(.enabled) }
@@ -175,20 +174,20 @@ struct DKIMCard: View {
                 Text(verbatim: "Every selector tried (\(found.count)) returns the same record:").foregroundStyle(.secondary)
                 Text(first.record ?? "").textSelection(.enabled)
             } else {
-            ForEach(Array(found.enumerated()), id: \.offset) { _, s in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        Text(s.selector).fontWeight(.semibold)
-                        if let bits = s.decoded?["key_bits"], bits.display != "0", let kt = s.decoded?["key_type"] { Text(verbatim: "\(bits.display)-bit \(kt.display)").foregroundStyle(.secondary) }
-                        if s.decoded?["revoked"] == .bool(true) { Text("revoked").foregroundStyle(.red) }
-                        Text(prose(s.name)).foregroundStyle(.tertiary)
+                ForEach(Array(found.enumerated()), id: \.offset) { _, s in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Text(s.selector).fontWeight(.semibold)
+                            if let bits = s.decoded?["key_bits"], bits.display != "0", let kt = s.decoded?["key_type"] { Text(verbatim: "\(bits.display)-bit \(kt.display)").foregroundStyle(.secondary) }
+                            if s.decoded?["revoked"] == .bool(true) { Text("revoked").foregroundStyle(.red) }
+                            Text(prose(s.name)).foregroundStyle(.tertiary)
+                        }
+                        if let problems = s.decoded?["problems"]?.arrayValue, !problems.isEmpty { ProblemList(problems: problems) }
                     }
-                    if let problems = s.decoded?["problems"]?.arrayValue, !problems.isEmpty { ProblemList(problems: problems) }
                 }
-            }
-            if !missing.isEmpty {
-                Text("Not found at: " + missing.map(\.selector).joined(separator: ", ")).foregroundStyle(.tertiary).font(.system(.caption, design: .monospaced))
-            }
+                if !missing.isEmpty {
+                    Text("Not found at: " + missing.map(\.selector).joined(separator: ", ")).foregroundStyle(.tertiary).font(.system(.caption, design: .monospaced))
+                }
             }
             // Providers with random or dated selectors cannot be guessed;
             // the selector is the s= tag of a DKIM-Signature header.
@@ -381,14 +380,21 @@ struct ProblemList: View {
     var problems: [JSONValue]
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(problems.enumerated()), id: \.offset) { _, p in
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: severityIcon(p["severity"]?.stringValue ?? "info")).foregroundStyle(severityColor(p["severity"]?.stringValue ?? "info"))
-                    Text(p["message"]?.display ?? "").textSelection(.enabled)
-                }
-                .font(.callout)
-            }
+            ForEach(Array(problems.enumerated()), id: \.offset) { _, p in ProblemRow(problem: p) }
         }
         .padding(.top, 4)
+    }
+}
+
+/// One decoder problem: its severity icon and message.
+struct ProblemRow: View {
+    var problem: JSONValue
+    var body: some View {
+        let severity = problem["severity"]?.stringValue ?? "info"
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: severityIcon(severity)).foregroundStyle(severityColor(severity))
+            Text(problem["message"]?.display ?? "").textSelection(.enabled)
+        }
+        .font(.callout)
     }
 }

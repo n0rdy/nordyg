@@ -2,10 +2,14 @@ package dnssec
 
 import (
 	"bytes"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/miekg/dns"
+
+	"github.com/n0rdy/nordyg/core/internal/prose"
 )
 
 // proofKind is what a set of NSEC/NSEC3 records proves about a name.
@@ -19,9 +23,15 @@ const (
 	proofOptOut                    // name is inside an NSEC3 opt-out span
 )
 
+// maxNSEC3Iterations is where a proof stops being checked. RFC 9276 asks
+// zones for 0 and lets validators pick their own ceiling; 150 is the lowest
+// of the limits RFC 5155 set per key size.
+const maxNSEC3Iterations = 150
+
 type proof struct {
 	kind       proofKind
 	delegation bool // NoData at a delegation point (NS set, SOA clear)
+	nsec3      bool // proven by NSEC3 records, not NSEC
 	reason     string
 	signatures []Signature
 }
@@ -93,8 +103,8 @@ func wildcardProof(m *dns.Msg, name, wild string, keys []*dns.DNSKEY, zone strin
 	}
 	if len(nsec3s) > 0 {
 		for _, n := range nsec3s {
-			if n.Iterations > 150 {
-				return Indeterminate, "NSEC3 iterations " + itoa(int(n.Iterations)) + " exceed the limit (RFC 9276), so the wildcard expansion for " + prose(name) + " cannot be checked", sigs
+			if n.Iterations > maxNSEC3Iterations {
+				return Indeterminate, "NSEC3 iterations " + strconv.Itoa(int(n.Iterations)) + " exceed the limit (RFC 9276), so the wildcard expansion for " + prose.Name(name) + " cannot be checked", sigs
 			}
 		}
 		// The closest encloser is implied by the RRSIG labels; only the next
@@ -107,21 +117,19 @@ func wildcardProof(m *dns.Msg, name, wild string, keys []*dns.DNSKEY, zone strin
 			}
 		}
 	}
-	return Bogus, prose(name) + " was answered from the wildcard " + prose(wild) + ", but the response does not prove that " + prose(name) + " itself does not exist (RFC 4035 §5.3.4)", sigs
+	return Bogus, prose.Name(name) + " was answered from the wildcard " + prose.Name(wild) + ", but the response does not prove that " + prose.Name(name) + " itself does not exist (RFC 4035 §5.3.4)", sigs
 }
-
-// --- NSEC --------------------------------------------------------------------
 
 func nsecProof(p proof, nsecs []*dns.NSEC, name string, qtype uint16) proof {
 	for _, n := range nsecs {
 		if strings.EqualFold(n.Hdr.Name, name) {
-			if hasType(n.TypeBitMap, qtype) || hasType(n.TypeBitMap, dns.TypeCNAME) {
+			if slices.Contains(n.TypeBitMap, qtype) || slices.Contains(n.TypeBitMap, dns.TypeCNAME) {
 				p.kind = proofBogus
 				p.reason = "NSEC for " + name + " claims the type exists"
 				return p
 			}
 			p.kind = proofNoData
-			p.delegation = hasType(n.TypeBitMap, dns.TypeNS) && !hasType(n.TypeBitMap, dns.TypeSOA)
+			p.delegation = slices.Contains(n.TypeBitMap, dns.TypeNS) && !slices.Contains(n.TypeBitMap, dns.TypeSOA)
 			return p
 		}
 	}
@@ -221,32 +229,22 @@ func canonicalCompare(a, b string) int {
 	return 0
 }
 
-func hasType(bitmap []uint16, t uint16) bool {
-	for _, v := range bitmap {
-		if v == t {
-			return true
-		}
-	}
-	return false
-}
-
-// --- NSEC3 -------------------------------------------------------------------
-
 func nsec3Proof(p proof, nsec3s []*dns.NSEC3, name string, qtype uint16) proof {
+	p.nsec3 = true
 	for _, n := range nsec3s {
-		if n.Iterations > 150 {
-			p.reason = "NSEC3 iterations " + itoa(int(n.Iterations)) + " exceed the limit, so the proof is unusable (RFC 9276)"
+		if n.Iterations > maxNSEC3Iterations {
+			p.reason = "NSEC3 iterations " + strconv.Itoa(int(n.Iterations)) + " exceed the limit, so the proof is unusable (RFC 9276)"
 			return p
 		}
 	}
 	if n := nsec3Match(nsec3s, name); n != nil {
-		if hasType(n.TypeBitMap, qtype) || hasType(n.TypeBitMap, dns.TypeCNAME) {
+		if slices.Contains(n.TypeBitMap, qtype) || slices.Contains(n.TypeBitMap, dns.TypeCNAME) {
 			p.kind = proofBogus
 			p.reason = "NSEC3 for " + name + " claims the type exists"
 			return p
 		}
 		p.kind = proofNoData
-		p.delegation = hasType(n.TypeBitMap, dns.TypeNS) && !hasType(n.TypeBitMap, dns.TypeSOA)
+		p.delegation = slices.Contains(n.TypeBitMap, dns.TypeNS) && !slices.Contains(n.TypeBitMap, dns.TypeSOA)
 		return p
 	}
 	// Closest encloser proof: walk up until an NSEC3 matches an ancestor.

@@ -1,4 +1,4 @@
-// Package presets implements the "presets" op (contract §7): the built-in
+// Package presets implements the "presets" op: the built-in
 // public resolvers so the shell never hardcodes addresses.
 package presets
 
