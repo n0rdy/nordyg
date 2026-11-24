@@ -22,7 +22,7 @@ struct Smoke {
 
         // 2. presets decode into the model, including the NextDNS placeholder flag.
         let presets: PresetsResult = try await core.call("presets")
-        check(presets.presets.count == 6, "presets decode (\(presets.presets.count))")
+        check(presets.presets.count == 5, "presets decode (\(presets.presets.count))")
         check(presets.presets.first { $0.id == "nextdns" }?.endpoints.allSatisfy(\.needsPlaceholder) == true, "placeholder endpoints are flagged")
 
         // 3. error path: unknown op arrives as a typed CoreError.

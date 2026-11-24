@@ -6,7 +6,7 @@
     {
       "layers" : [
         {
-          "image-name" : "logo.png",
+          "image-name" : "logo.svg",
           "name" : "logo"
         }
       ]

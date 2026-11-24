@@ -39,7 +39,7 @@ func TestEveryEndpointValidates(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"cloudflare", "google", "quad9", "nextdns", "adguard", "mullvad"} {
+	for _, want := range []string{"cloudflare", "google", "quad9", "nextdns", "adguard"} {
 		if !ids[want] {
 			t.Errorf("missing preset %s", want)
 		}
@@ -58,7 +58,7 @@ func TestOpOutput(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &res); err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Presets) != 6 || res.Presets[0].ID != "cloudflare" {
+	if len(res.Presets) != 5 || res.Presets[0].ID != "cloudflare" {
 		t.Fatalf("%+v", res.Presets)
 	}
 	// NextDNS carries its placeholder requirement through JSON.

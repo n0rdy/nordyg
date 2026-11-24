@@ -87,9 +87,11 @@ APP       := $(DERIVED)/Build/Products/Debug/Nordyg.app
 xcodeproj:
 	cd app && xcodegen generate
 
-# Render the Icon Composer package's layer from the logo tile.
+# Put the logo (app/design/logo.svg) into the Icon Composer package and
+# render the site's PNGs from it. Regenerate the SVG first with
+# app/design/logo.py when its geometry changes.
 icon:
-	swift app/tools/make-icon.swift app/design/logo-tile.png app/Nordyg/AppIcon.icon
+	swift app/tools/make-icon.swift app/design/logo.svg app/Nordyg/AppIcon.icon landing/public
 
 # Debug build of the app, ad-hoc signed (no team needed).
 app: archive

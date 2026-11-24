@@ -1,6 +1,7 @@
 package health
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -9,11 +10,17 @@ import (
 	"crypto/x509/pkix"
 	"math/big"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/miekg/dns"
+
 	"github.com/n0rdy/nordyg/core/internal/certs"
+	"github.com/n0rdy/nordyg/core/internal/contract"
 	"github.com/n0rdy/nordyg/core/internal/dnssec"
+	"github.com/n0rdy/nordyg/core/internal/testdns"
+	"github.com/n0rdy/nordyg/core/internal/transport"
 )
 
 // webServer runs a TLS listener with a self-signed certificate for names,
@@ -128,5 +135,44 @@ func TestHTTPSJudge(t *testing.T) {
 	}
 	if sec.Verdict.Status != Fail {
 		t.Fatalf("%+v", sec.Verdict)
+	}
+}
+
+func TestWebAddrsFailedLookupIsNotNoWebsite(t *testing.T) {
+	var aTries atomic.Int32
+	srv := testdns.UDP(t, func(q *dns.Msg) *dns.Msg {
+		m := new(dns.Msg)
+		m.SetReply(q)
+		qq := q.Question[0]
+		switch {
+		case qq.Name == "flaky.example." && qq.Qtype == dns.TypeA:
+			aTries.Add(1)
+			m.Rcode = dns.RcodeServerFailure
+		case qq.Name == "flaky.example." && qq.Qtype == dns.TypeAAAA:
+			m.Answer = []dns.RR{rr(t, "flaky.example. 300 IN AAAA 2001:db8::80")}
+		case qq.Name == "none.example.":
+			m.Rcode = dns.RcodeNameError
+		}
+		return m
+	})
+	r := &resolver{client: &transport.Client{}, ep: contract.Endpoint{Transport: "udp", Address: srv}, o: contract.Options{TimeoutMS: 300}.Resolve()}
+	ips, failed := webAddrs(context.Background(), r, "flaky.example.")
+	if len(ips) != 1 || len(failed) != 1 || failed[0] != "A" || aTries.Load() != 2 {
+		t.Fatalf("ips %v failed %v after %d A tries", ips, failed, aTries.Load())
+	}
+	if ips, failed := webAddrs(context.Background(), r, "none.example."); len(ips) != 0 || len(failed) != 0 {
+		t.Fatalf("NXDOMAIN is no address, not a failure: %v %v", ips, failed)
+	}
+
+	sec := HTTPS{Hosts: []HTTPSHost{
+		{Name: "example.com.", LookupFailed: []string{"A", "AAAA"}, Servers: []certs.Probe{}},
+		{Name: "www.example.com.", LookupFailed: []string{"A"}, Servers: []certs.Probe{
+			{IP: "2001:db8::80", Connected: true, Trusted: true, NameMatch: true, ExpiresInDays: 30, Chain: []certs.Cert{{SHA256: "aa"}}}}},
+	}}
+	judgeHTTPS(&sec, CAA{})
+	if !has(sec.Section, Warn, "example.com: the A and AAAA lookups failed through this resolver, so its website was not checked") ||
+		!has(sec.Section, Warn, "www.example.com: the A lookup failed through this resolver, so its IPv4 addresses were not checked") ||
+		sec.Verdict.Status != Warn {
+		t.Fatalf("%+v", sec.Section)
 	}
 }

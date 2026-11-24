@@ -22,11 +22,14 @@ type HTTPSHost struct {
 	Name string `json:"name"`
 	// TLSA records at _443._tcp.<name>, their DNSSEC status as Nordyg
 	// validated it, and whether any server's certificate matches them.
-	TLSA       []string      `json:"tlsa"`
-	TLSAStatus string        `json:"tlsa_status,omitempty"`
-	TLSAMatch  *bool         `json:"tlsa_match,omitempty"`
-	TLSAError  string        `json:"tlsa_error,omitempty"`
-	Servers    []certs.Probe `json:"servers"`
+	TLSA       []string `json:"tlsa"`
+	TLSAStatus string   `json:"tlsa_status,omitempty"`
+	TLSAMatch  *bool    `json:"tlsa_match,omitempty"`
+	TLSAError  string   `json:"tlsa_error,omitempty"`
+	// LookupFailed names the address types (A, AAAA) whose lookup failed
+	// even after a retry, so those addresses were not checked.
+	LookupFailed []string      `json:"lookup_failed,omitempty"`
+	Servers      []certs.Probe `json:"servers"`
 }
 
 // HTTPS is the certificate check.
@@ -62,12 +65,16 @@ func (op *Op) checkHTTPS(ctx context.Context, p Params, r *resolver, o contract.
 		names = append(names, "www."+apex)
 	}
 	for _, name := range names {
-		ips := r.addrs(ctx, name)
-		if len(ips) == 0 {
-			continue
+		ips, failed := webAddrs(ctx, r, name)
+		if len(ips) == 0 && len(failed) == 0 {
+			continue // no address: not a website
 		}
 		sort.Slice(ips, func(a, b int) bool { return ipLess(ips[a], ips[b]) })
-		host := HTTPSHost{Name: name, TLSA: []string{}, Servers: make([]certs.Probe, len(ips))}
+		host := HTTPSHost{Name: name, TLSA: []string{}, Servers: make([]certs.Probe, len(ips)), LookupFailed: failed}
+		if len(ips) == 0 {
+			sec.Hosts = append(sec.Hosts, host)
+			continue
+		}
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, maxProbes)
 		for i, ip := range ips {
@@ -94,6 +101,32 @@ func (op *Op) checkHTTPS(ctx context.Context, p Params, r *resolver, o contract.
 	}
 	judgeHTTPS(&sec, caa)
 	return sec
+}
+
+// webAddrs looks up A and AAAA for name. A lookup that errors or comes back
+// SERVFAIL (anything but NOERROR or NXDOMAIN) is retried once and then named
+// in failed, so a timeout is never read as "this name has no website".
+func webAddrs(ctx context.Context, r *resolver, name string) (ips, failed []string) {
+	for _, t := range []uint16{dns.TypeA, dns.TypeAAAA} {
+		var m *dns.Msg
+		ok := false
+		for range 2 {
+			msg, err := r.lookup(ctx, name, t)
+			if err == nil && (msg.Rcode == dns.RcodeSuccess || msg.Rcode == dns.RcodeNameError) {
+				m, ok = msg, true
+				break
+			}
+			if ctx.Err() != nil {
+				break
+			}
+		}
+		if !ok {
+			failed = append(failed, dns.TypeToString[t])
+			continue
+		}
+		ips = append(ips, addresses(m.Answer, "")...)
+	}
+	return ips, failed
 }
 
 func (op *Op) probeHTTPS(ctx context.Context, in *certs.Inspector, name, ip string) certs.Probe {
@@ -159,6 +192,28 @@ func judgeHTTPS(sec *HTTPS, caa CAA) {
 	var working []string
 	scope := "every address"
 	for _, h := range sec.Hosts {
+		if len(h.LookupFailed) > 0 {
+			what := "its website"
+			switch {
+			case len(h.Servers) > 0 && len(h.LookupFailed) == 1 && h.LookupFailed[0] == "A":
+				what = "its IPv4 addresses"
+			case len(h.Servers) > 0 && len(h.LookupFailed) == 1:
+				what = "its IPv6 addresses"
+			}
+			verb := "were"
+			if what == "its website" {
+				verb = "was"
+			}
+			lookups := "lookup"
+			if len(h.LookupFailed) > 1 {
+				lookups = "lookups"
+			}
+			sec.add(Warn, "%s: the %s %s failed through this resolver, so %s %s not checked. Run the check again",
+				prose(h.Name), strings.Join(h.LookupFailed, " and "), lookups, what, verb)
+			if len(h.Servers) == 0 {
+				continue
+			}
+		}
 		problems := map[string][]string{} // message → addresses
 		status := map[string]string{}
 		add := func(st, msg, ip string) { problems[msg] = append(problems[msg], ip); status[msg] = st }

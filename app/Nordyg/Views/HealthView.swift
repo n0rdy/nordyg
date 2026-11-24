@@ -280,18 +280,22 @@ struct HTTPSCard: View {
             ForEach(section.hosts, id: \.name) { h in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(prose(h.name)).fontWeight(.semibold)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
-                            GridRow {
-                                ForEach(["", "address", "issued by", "valid until", "certificate"], id: \.self) { Text($0).foregroundStyle(.secondary) }
-                            }
-                            ForEach(h.servers.filter { !$0.skipped }, id: \.ip) { s in
+                    if h.servers.isEmpty {
+                        Text("address lookup failed, not checked").font(.callout).foregroundStyle(.orange)
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
                                 GridRow {
-                                    Image(systemName: VerdictStyle.icon(Self.status(s))).foregroundStyle(VerdictStyle.color(Self.status(s)))
-                                    Text(s.ip).textSelection(.enabled)
-                                    Text(s.chain.first?.issuer ?? "–")
-                                    Text(verbatim: s.chain.first.map { Self.date($0.notAfter) } ?? "–")
-                                    Text(Self.label(s)).foregroundStyle(Self.status(s) == "ok" ? Color.secondary : VerdictStyle.color(Self.status(s)))
+                                    ForEach(["", "address", "issued by", "valid until", "certificate"], id: \.self) { Text($0).foregroundStyle(.secondary) }
+                                }
+                                ForEach(h.servers.filter { !$0.skipped }, id: \.ip) { s in
+                                    GridRow {
+                                        Image(systemName: VerdictStyle.icon(Self.status(s))).foregroundStyle(VerdictStyle.color(Self.status(s)))
+                                        Text(s.ip).textSelection(.enabled)
+                                        Text(s.chain.first?.issuer ?? "–")
+                                        Text(verbatim: s.chain.first.map { Self.date($0.notAfter) } ?? "–")
+                                        Text(Self.label(s)).foregroundStyle(Self.status(s) == "ok" ? Color.secondary : VerdictStyle.color(Self.status(s)))
+                                    }
                                 }
                             }
                         }

@@ -398,7 +398,7 @@ struct TLSProbe: Codable, Hashable {
     var revocationChecked: Bool
     var revocationNote: String?
 }
-struct HealthHTTPSHost: Codable, Hashable { var name: String; var tlsa: [String]; var tlsaStatus: String?; var tlsaMatch: Bool?; var tlsaError: String?; var servers: [TLSProbe] }
+struct HealthHTTPSHost: Codable, Hashable { var name: String; var tlsa: [String]; var tlsaStatus: String?; var tlsaMatch: Bool?; var tlsaError: String?; var lookupFailed: [String]?; var servers: [TLSProbe] }
 struct HealthHTTPS: Codable, Hashable { var hosts: [HealthHTTPSHost]; var verdict: Verdict; var findings: [Verdict] }
 struct HealthResult: Codable, Hashable {
     var domain: String

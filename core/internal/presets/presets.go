@@ -141,14 +141,4 @@ var all = []Preset{
 			},
 		),
 	},
-	{
-		// Mullvad only serves encrypted DNS publicly; plain 53 works on their VPN only.
-		ID: "mullvad", Name: "Mullvad",
-		Endpoints: []contract.Endpoint{
-			dot("Mullvad", "194.242.2.2", "dns.mullvad.net"),
-			dot("Mullvad IPv6", "2a07:e340::2", "dns.mullvad.net"),
-			doh("Mullvad", "194.242.2.2", "https://dns.mullvad.net/dns-query"),
-			doh("Mullvad IPv6", "2a07:e340::2", "https://dns.mullvad.net/dns-query"),
-		},
-	},
 }
