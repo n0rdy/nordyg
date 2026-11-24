@@ -39,7 +39,10 @@ struct CheckCard<Content: View>: View {
     @ViewBuilder var details: Content
     @State private var open: Bool
 
-    init(_ title: String, subtitle: String, verdict: Verdict, startOpen: Bool = false, hasDetails: Bool = true, @ViewBuilder details: () -> Content) {
+    init(
+        _ title: String, subtitle: String, verdict: Verdict, startOpen: Bool = false, hasDetails: Bool = true,
+        @ViewBuilder details: () -> Content
+    ) {
         self.title = title
         self.subtitle = subtitle
         self.verdict = verdict
@@ -85,7 +88,9 @@ struct CheckCard<Content: View>: View {
 struct MXCard: View {
     var section: MXSection
     var body: some View {
-        CheckCard("Mail servers", subtitle: "MX", verdict: section.verdict, startOpen: true, hasDetails: !section.hosts.isEmpty || section.nullMx) {
+        CheckCard(
+            "Mail servers", subtitle: "MX", verdict: section.verdict, startOpen: true, hasDetails: !section.hosts.isEmpty || section.nullMx
+        ) {
             if section.nullMx {
                 Text("MX 0 .  (null MX)")
             }
@@ -99,9 +104,11 @@ struct MXCard: View {
                     }
                     ForEach(Array(h.ptr.enumerated()), id: \.offset) { _, p in
                         HStack(spacing: 6) {
-                            Image(systemName: p.matches ? "arrow.uturn.left.circle.fill" : "arrow.uturn.left.circle").foregroundStyle(p.matches ? Color.green : Color.orange)
+                            Image(systemName: p.matches ? "arrow.uturn.left.circle.fill" : "arrow.uturn.left.circle").foregroundStyle(
+                                p.matches ? Color.green : Color.orange)
                             Text(verbatim: "\(p.ip) → \(p.names.isEmpty ? "no PTR" : p.names.map(prose).joined(separator: ", "))")
-                            Text(p.matches ? "forward-confirmed" : "does not point back").foregroundStyle(p.matches ? Color.secondary : Color.orange)
+                            Text(p.matches ? "forward-confirmed" : "does not point back").foregroundStyle(
+                                p.matches ? Color.secondary : Color.orange)
                             if let e = p.error { Text(e).foregroundStyle(.red) }
                         }
                         .padding(.leading, 36)
@@ -178,7 +185,9 @@ struct DKIMCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 8) {
                             Text(s.selector).fontWeight(.semibold)
-                            if let bits = s.decoded?["key_bits"], bits.display != "0", let kt = s.decoded?["key_type"] { Text(verbatim: "\(bits.display)-bit \(kt.display)").foregroundStyle(.secondary) }
+                            if let bits = s.decoded?["key_bits"], bits.display != "0", let kt = s.decoded?["key_type"] {
+                                Text(verbatim: "\(bits.display)-bit \(kt.display)").foregroundStyle(.secondary)
+                            }
                             if s.decoded?["revoked"] == .bool(true) { Text("revoked").foregroundStyle(.red) }
                             Text(prose(s.name)).foregroundStyle(.tertiary)
                         }
@@ -186,7 +195,8 @@ struct DKIMCard: View {
                     }
                 }
                 if !missing.isEmpty {
-                    Text("Not found at: " + missing.map(\.selector).joined(separator: ", ")).foregroundStyle(.tertiary).font(.system(.caption, design: .monospaced))
+                    Text("Not found at: " + missing.map(\.selector).joined(separator: ", ")).foregroundStyle(.tertiary).font(
+                        .system(.caption, design: .monospaced))
                 }
             }
             // Providers with random or dated selectors cannot be guessed;
@@ -270,7 +280,8 @@ struct TransportCard: View {
                         // When port 25 was blocked for every server the verdict
                         // already says so, so rows would only repeat it.
                         if reachedAny {
-                            ForEach(g.flatMap { h in h.servers.filter { $0.skipped != true }.map { (h.exchange, $0) } }, id: \.1.ip) { host, s in
+                            ForEach(g.flatMap { h in h.servers.filter { $0.skipped != true }.map { (h.exchange, $0) } }, id: \.1.ip) {
+                                host, s in
                                 HStack(spacing: 8) {
                                     Text(s.ip).textSelection(.enabled)
                                     if g.count > 1 { Text(prose(host)).foregroundStyle(.secondary) }

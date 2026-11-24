@@ -12,7 +12,7 @@ import SystemConfiguration
 /// dynamic store.
 enum DNSConfiguration {
     struct Resolver: Hashable {
-        var domain: String?          // nil = the default resolver
+        var domain: String?  // nil = the default resolver
         var nameservers: [String]
         var port: Int
         var searchDomains: [String]
@@ -20,7 +20,7 @@ enum DNSConfiguration {
         var order: UInt32
         var options: String?
         var flags: UInt32
-        var scoped: Bool             // from the scoped list (bound to one interface)
+        var scoped: Bool  // from the scoped list (bound to one interface)
 
         /// mDNS (Bonjour) scopes like `local` and link-local reverse zones.
         var isMulticast: Bool { (options ?? "").contains("mdns") }
@@ -34,8 +34,9 @@ enum DNSConfiguration {
 
     static func current() -> [Resolver]? {
         guard let h = dlopen(nil, RTLD_NOW),
-              let c = dlsym(h, "dns_configuration_copy"),
-              let f = dlsym(h, "dns_configuration_free") else { return nil }
+            let c = dlsym(h, "dns_configuration_copy"),
+            let f = dlsym(h, "dns_configuration_free")
+        else { return nil }
         let copy = unsafeBitCast(c, to: Copy.self)
         let free = unsafeBitCast(f, to: Free.self)
         guard let cfg = copy() else { return nil }
@@ -134,10 +135,10 @@ enum InterfaceNames {
 
 /// What this Mac does with a name: which resolvers, in order, and why.
 struct MacDNSPlan {
-    var defaults: [DNSConfiguration.Resolver]       // asked for everything else, in order
-    var splitRules: [DNSConfiguration.Resolver]     // only for names under `domain`
-    var multicast: [DNSConfiguration.Resolver]      // Bonjour scopes
-    var scoped: [DNSConfiguration.Resolver]         // per-interface view
+    var defaults: [DNSConfiguration.Resolver]  // asked for everything else, in order
+    var splitRules: [DNSConfiguration.Resolver]  // only for names under `domain`
+    var multicast: [DNSConfiguration.Resolver]  // Bonjour scopes
+    var scoped: [DNSConfiguration.Resolver]  // per-interface view
 
     init(_ all: [DNSConfiguration.Resolver]) {
         let main = all.filter { !$0.scoped }.sorted { $0.order < $1.order }
@@ -166,7 +167,10 @@ struct MacDNSPlan {
             return n == d || n.hasSuffix("." + d)
         }
         if let best = candidates.max(by: { ($0.domain ?? "").count < ($1.domain ?? "").count }) {
-            let why = best.isMulticast ? ".\(best.domain!) names never go to a DNS server" : "a rule, usually from a VPN, sends every domain ending in \(best.domain!) here"
+            let why =
+                best.isMulticast
+                ? ".\(best.domain!) names never go to a DNS server"
+                : "a rule, usually from a VPN, sends every domain ending in \(best.domain!) here"
             return (best, why)
         }
         if let d = defaults.first { return (d, "it comes first for all domains") }
@@ -188,7 +192,8 @@ final class MacDNSMonitor: ObservableObject {
         // The store does not retain the monitor. The app has one, owned by
         // AppModel for as long as the app runs, so the callback never sees a
         // dead pointer.
-        var ctx = SCDynamicStoreContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+        var ctx = SCDynamicStoreContext(
+            version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let callback: SCDynamicStoreCallBack = { _, _, info in
             guard let info else { return }
             let me = Unmanaged<MacDNSMonitor>.fromOpaque(info).takeUnretainedValue()
@@ -203,7 +208,10 @@ final class MacDNSMonitor: ObservableObject {
     }
 
     func reload(initial: Bool) {
-        guard let all = DNSConfiguration.current() else { available = false; return }
+        guard let all = DNSConfiguration.current() else {
+            available = false
+            return
+        }
         let next = MacDNSPlan(all)
         if !initial, next.defaults != plan.defaults || next.splitRules != plan.splitRules { changedAt = Date() }
         plan = next

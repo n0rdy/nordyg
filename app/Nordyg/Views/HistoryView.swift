@@ -12,8 +12,9 @@ struct HistoryView: View {
     var items: [HistoryItem] {
         let f = filter.trimmingCharacters(in: .whitespaces).lowercased()
         let list = model.history.filter { item in
-            (modeFilter.map(item.belongs(to:)) ?? true) &&
-            (f.isEmpty || item.name.lowercased().contains(f) || item.type.lowercased().contains(f) || item.subtitle.lowercased().contains(f))
+            (modeFilter.map(item.belongs(to:)) ?? true)
+                && (f.isEmpty || item.name.lowercased().contains(f) || item.type.lowercased().contains(f)
+                    || item.subtitle.lowercased().contains(f))
         }
         return list.sorted { ($0.pinned ? 1 : 0, $0.date) > ($1.pinned ? 1 : 0, $1.date) }
     }
@@ -29,15 +30,21 @@ struct HistoryView: View {
                 if showWatches {
                     Section("Watches") {
                         ForEach(watches.watches) { w in
-                            Button { model.selectedWatch = w.id } label: {
+                            Button {
+                                model.selectedWatch = w.id
+                            } label: {
                                 HStack(spacing: 8) {
                                     WatchDot(watch: w)
                                     VStack(alignment: .leading, spacing: 2) {
                                         HStack(spacing: 6) {
-                                            Text(w.question.name).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                                            Text(w.question.name).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(
+                                                .middle)
                                             Text(w.question.type).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                         }
-                                        Text(verbatim: "every \(w.intervalLabel)" + (w.changes > 0 ? " · \(plural(w.changes, "change"))" : "") + (w.paused ? " · paused" : "")).font(.caption).foregroundStyle(.secondary)
+                                        Text(
+                                            verbatim: "every \(w.intervalLabel)"
+                                                + (w.changes > 0 ? " · \(plural(w.changes, "change"))" : "") + (w.paused ? " · paused" : "")
+                                        ).font(.caption).foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                 }
@@ -48,7 +55,10 @@ struct HistoryView: View {
                             .contextMenu {
                                 Button("Check now") { watches.checkNow(w.id) }
                                 Button(w.paused ? "Resume" : "Pause") { watches.setPaused(w.id, !w.paused) }
-                                Button("Stop watching", role: .destructive) { watches.remove(w.id); if model.selectedWatch == w.id { model.selectedWatch = nil } }
+                                Button("Stop watching", role: .destructive) {
+                                    watches.remove(w.id)
+                                    if model.selectedWatch == w.id { model.selectedWatch = nil }
+                                }
                             }
                         }
                     }
@@ -62,10 +72,14 @@ struct HistoryView: View {
                         HStack {
                             Text(verbatim: "Showing \(m.title) only")
                             Spacer()
-                            Button { modeFilter = nil } label: { Image(systemName: "xmark.circle.fill") }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.secondary)
-                                .help("Show all history")
+                            Button {
+                                modeFilter = nil
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .help("Show all history")
                         }
                     }
                 }
@@ -84,7 +98,10 @@ struct HistoryView: View {
                 } else if !model.history.isEmpty && items.isEmpty {
                     VStack(spacing: 6) {
                         Text("No matches").foregroundStyle(.secondary)
-                        Button("Show all") { filter = ""; modeFilter = nil }.buttonStyle(.link)
+                        Button("Show all") {
+                            filter = ""
+                            modeFilter = nil
+                        }.buttonStyle(.link)
                     }
                 }
             }
@@ -104,16 +121,22 @@ struct HistoryView: View {
                         }
                         .pickerStyle(.inline)
                     } label: {
-                        Image(systemName: modeFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                            .foregroundStyle(modeFilter == nil ? Color.secondary : Color.accentColor)
+                        Image(
+                            systemName: modeFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
+                        )
+                        .foregroundStyle(modeFilter == nil ? Color.secondary : Color.accentColor)
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .help(modeFilter.map { "Showing \($0.title) only" } ?? "Show one kind of history")
-                    Button { model.clearHistory() } label: { Image(systemName: "trash") }
-                        .buttonStyle(.borderless)
-                        .help("Clear unpinned history")
+                    Button {
+                        model.clearHistory()
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Clear unpinned history")
                 }
                 .padding(8)
             }
@@ -131,7 +154,9 @@ struct HistoryRow: View {
     var showsTime: Bool
 
     var body: some View {
-        Button { model.rerun(item) } label: {
+        Button {
+            model.rerun(item)
+        } label: {
             HStack(spacing: 7) {
                 Image(systemName: icon)
                     .foregroundStyle(.secondary)
@@ -144,7 +169,7 @@ struct HistoryRow: View {
                 }
                 Spacer(minLength: 4)
                 Text(stamp).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
-                    .fixedSize() // never truncated: the time is short and always readable
+                    .fixedSize()  // never truncated: the time is short and always readable
             }
             .contentShape(Rectangle())
         }
@@ -200,7 +225,11 @@ struct HistoryRow: View {
 /// Pinned first, then Today, Yesterday, the rest of the past week by day, and
 /// older entries by month.
 enum HistorySections {
-    struct Section { var title: String; var items: [HistoryItem]; var showsTime: Bool }
+    struct Section {
+        var title: String
+        var items: [HistoryItem]
+        var showsTime: Bool
+    }
 
     static func group(_ items: [HistoryItem], now: Date = Date(), calendar: Calendar = .current) -> [Section] {
         var out: [Section] = []

@@ -22,7 +22,9 @@ struct NordygApp: App {
             WatchMenu()
                 .environmentObject(model.watches)
         } label: {
-            Image(systemName: model.watches.watches.isEmpty ? "eye" : (model.watches.anyUnread ? "eye.trianglebadge.exclamationmark" : "eye.fill"))
+            Image(
+                systemName: model.watches.watches.isEmpty
+                    ? "eye" : (model.watches.anyUnread ? "eye.trianglebadge.exclamationmark" : "eye.fill"))
         }
         .menuBarExtraStyle(.window)
         .commands {

@@ -10,10 +10,16 @@ struct WatchView: View {
         if let w = watches.watches.first(where: { $0.id == id }) {
             VStack(spacing: 0) {
                 StatusStrip {
-                    Pill(text: w.paused ? "paused" : "watching", icon: w.paused ? "pause.circle" : "eye", color: w.paused ? .secondary : .accentColor,
-                         help: "Nordyg re-runs this query every \(w.intervalLabel) and records every answer. A change in the answer set or rcode is logged and sent as a notification.")
+                    Pill(
+                        text: w.paused ? "paused" : "watching", icon: w.paused ? "pause.circle" : "eye",
+                        color: w.paused ? .secondary : .accentColor,
+                        help:
+                            "Nordyg re-runs this query every \(w.intervalLabel) and records every answer. A change in the answer set or rcode is logged and sent as a notification."
+                    )
                     Pill(text: "every \(w.intervalLabel)", icon: "timer", mono: true)
-                    Pill(text: plural(w.changes, "change"), icon: "arrow.triangle.2.circlepath", color: w.changes > 0 ? .orange : .secondary, mono: true)
+                    Pill(
+                        text: plural(w.changes, "change"), icon: "arrow.triangle.2.circlepath", color: w.changes > 0 ? .orange : .secondary,
+                        mono: true)
                     Pill(text: "\(w.events.count) checks", mono: true)
                     Pill(text: w.endpoint.title, icon: "server.rack")
                     Spacer()
@@ -24,15 +30,30 @@ struct WatchView: View {
                 }
                 Divider()
                 HStack(spacing: 10) {
-                    Button { watches.checkNow(id) } label: { Label("Check now", systemImage: "arrow.clockwise") }
-                    Button { watches.setPaused(id, !w.paused) } label: { Label(w.paused ? "Resume" : "Pause", systemImage: w.paused ? "play" : "pause") }
+                    Button {
+                        watches.checkNow(id)
+                    } label: {
+                        Label("Check now", systemImage: "arrow.clockwise")
+                    }
+                    Button {
+                        watches.setPaused(id, !w.paused)
+                    } label: {
+                        Label(w.paused ? "Resume" : "Pause", systemImage: w.paused ? "play" : "pause")
+                    }
                     Menu {
                         ForEach(WatchCenter.intervals, id: \.self) { s in
                             Button(WatchCenter.intervalLabel(s)) { watches.setInterval(id, s) }
                         }
-                    } label: { Label("Interval", systemImage: "timer") }.fixedSize()
+                    } label: {
+                        Label("Interval", systemImage: "timer")
+                    }.fixedSize()
                     Spacer()
-                    Button(role: .destructive) { watches.remove(id); model.selectedWatch = nil } label: { Label("Stop watching", systemImage: "eye.slash") }
+                    Button(role: .destructive) {
+                        watches.remove(id)
+                        model.selectedWatch = nil
+                    } label: {
+                        Label("Stop watching", systemImage: "eye.slash")
+                    }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 Divider()
@@ -42,7 +63,8 @@ struct WatchView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(w.events.enumerated()), id: \.element.id) { i, e in
-                                EventRow(event: e, previous: i + 1 < w.events.count ? w.events[i + 1] : nil, isLast: i == w.events.count - 1)
+                                EventRow(
+                                    event: e, previous: i + 1 < w.events.count ? w.events[i + 1] : nil, isLast: i == w.events.count - 1)
                             }
                         }
                         .padding(16)
@@ -70,13 +92,16 @@ struct EventRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 0) {
-                Circle().fill(color).frame(width: event.changed || event.error != nil ? 12 : 8, height: event.changed || event.error != nil ? 12 : 8).padding(.top, event.changed || event.error != nil ? 4 : 6)
+                Circle().fill(color).frame(
+                    width: event.changed || event.error != nil ? 12 : 8, height: event.changed || event.error != nil ? 12 : 8
+                ).padding(.top, event.changed || event.error != nil ? 4 : 6)
                 if !isLast { Rectangle().fill(Color.secondary.opacity(0.25)).frame(width: 2).frame(maxHeight: .infinity) }
             }
             .frame(width: 12)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(event.date.formatted(date: .abbreviated, time: .standard)).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+                    Text(event.date.formatted(date: .abbreviated, time: .standard)).font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(.secondary)
                     if let err = event.error {
                         Pill(text: "error", icon: "xmark.circle", color: .red)
                         Text(err).font(.callout).foregroundStyle(.red).lineLimit(1)
@@ -152,7 +177,11 @@ struct WatchMenu: View {
                             Text(lastLine(w)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
-                        Button { watches.checkNow(w.id) } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).help("Check now")
+                        Button {
+                            watches.checkNow(w.id)
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }.buttonStyle(.plain).help("Check now")
                     }
                 }
             }

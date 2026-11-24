@@ -28,8 +28,11 @@ struct MacResolversSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         if let at = monitor.changedAt {
-                            Label(at.formatted(date: .omitted, time: .shortened) + ": the configuration changed", systemImage: "arrow.triangle.2.circlepath")
-                                .font(.callout).foregroundStyle(.orange)
+                            Label(
+                                at.formatted(date: .omitted, time: .shortened) + ": the configuration changed",
+                                systemImage: "arrow.triangle.2.circlepath"
+                            )
+                            .font(.callout).foregroundStyle(.orange)
                         }
                         summary(plan)
                         group(plan.splitRules.isEmpty ? "For all domains, in this order" : "For all other domains, in this order") {
@@ -43,7 +46,8 @@ struct MacResolversSheet: View {
                             group("Only for some names (split DNS)") {
                                 ForEach(Array(plan.splitRules.enumerated()), id: \.offset) { _, r in
                                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                        Text(verbatim: "*.\(r.domain ?? "")").font(.system(.body, design: .monospaced)).fontWeight(.semibold)
+                                        Text(verbatim: "*.\(r.domain ?? "")").font(.system(.body, design: .monospaced)).fontWeight(
+                                            .semibold)
                                         Image(systemName: "arrow.right").foregroundStyle(.tertiary)
                                         Text(r.nameservers.map { plan.describe($0) }.joined(separator: ", "))
                                             .font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
@@ -54,20 +58,28 @@ struct MacResolversSheet: View {
                         if !plan.multicast.isEmpty {
                             group("Bonjour, on the local network") {
                                 let zones = plan.multicast.compactMap(\.domain)
-                                Text(verbatim: zones.count > 2 ? "\(zones.prefix(2).joined(separator: ", ")) and \(zones.count - 2) more reverse zones" : zones.joined(separator: ", "))
-                                    .font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
-                                    .help(zones.joined(separator: "\n"))
+                                Text(
+                                    verbatim: zones.count > 2
+                                        ? "\(zones.prefix(2).joined(separator: ", ")) and \(zones.count - 2) more reverse zones"
+                                        : zones.joined(separator: ", ")
+                                )
+                                .font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+                                .help(zones.joined(separator: "\n"))
                             }
                         }
                         let search = Array(Set(plan.defaults.flatMap(\.searchDomains))).sorted()
                         if !search.isEmpty {
                             group("Search domains") {
-                                Text(search.joined(separator: ", ")).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
-                                Text("A single-label name like “printer” is tried with these appended.").font(.caption).foregroundStyle(.tertiary)
+                                Text(search.joined(separator: ", ")).font(.system(.callout, design: .monospaced)).foregroundStyle(
+                                    .secondary)
+                                Text("A single-label name like “printer” is tried with these appended.").font(.caption).foregroundStyle(
+                                    .tertiary)
                             }
                         }
-                        Text("Encrypted DNS set up by a profile or an app is not visible here. It shows up as a resolver on this Mac's own addresses, like a VPN or filter app does.")
-                            .font(.caption).foregroundStyle(.tertiary)
+                        Text(
+                            "Encrypted DNS set up by a profile or an app is not visible here. It shows up as a resolver on this Mac's own addresses, like a VPN or filter app does."
+                        )
+                        .font(.caption).foregroundStyle(.tertiary)
                     }
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -107,7 +119,9 @@ struct MacResolversSheet: View {
     private func summary(_ plan: MacDNSPlan) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(plan.splitRules.enumerated()), id: \.offset) { _, r in
-                Text(verbatim: "Domains ending in \(r.domain ?? "") go to \(r.nameservers.map { plan.describe($0) }.joined(separator: " or ")).")
+                Text(
+                    verbatim:
+                        "Domains ending in \(r.domain ?? "") go to \(r.nameservers.map { plan.describe($0) }.joined(separator: " or ")).")
             }
             Text(verbatim: everyOther(plan))
             if plan.multicast.contains(where: { $0.domain == "local" }) {
@@ -132,7 +146,8 @@ struct MacResolversSheet: View {
 
     private func use(_ ns: String) {
         let addr = SystemResolvers.hostPort(ns, 53)
-        model.selected = model.allEndpoints.first { $0.transport == "udp" && $0.address == addr }
+        model.selected =
+            model.allEndpoints.first { $0.transport == "udp" && $0.address == addr }
             ?? Endpoint(transport: "udp", address: addr, label: "System \(ns)")
         model.mode = .query
         model.severalResolvers = false

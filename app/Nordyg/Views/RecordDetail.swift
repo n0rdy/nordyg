@@ -13,9 +13,13 @@ struct RecordDetail: View {
                 TypeBadge(type: record.type)
                 Text(record.name).font(.system(.body, design: .monospaced).weight(.semibold)).textSelection(.enabled).lineLimit(1)
                 Spacer()
-                Button { close() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                    .buttonStyle(.plain)
-                    .help("Close (Esc)")
+                Button {
+                    close()
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Close (Esc)")
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(.bar)
@@ -58,11 +62,27 @@ struct RecordDetail: View {
 
                 Text("Actions").font(.headline)
                 VStack(alignment: .leading, spacing: 6) {
-                    Button { Pasteboard.copy(record.rdata) } label: { Label("Copy data", systemImage: "doc.on.doc") }
-                    Button { Pasteboard.copy(record.zoneLine) } label: { Label("Copy record", systemImage: "doc.on.doc.fill") }
+                    Button {
+                        Pasteboard.copy(record.rdata)
+                    } label: {
+                        Label("Copy data", systemImage: "doc.on.doc")
+                    }
+                    Button {
+                        Pasteboard.copy(record.zoneLine)
+                    } label: {
+                        Label("Copy record", systemImage: "doc.on.doc.fill")
+                    }
                     if let t = record.target {
-                        Button { model.resolve(t) } label: { Label("Resolve \(prose(t)) (A)", systemImage: "arrow.turn.down.right") }
-                        Button { model.resolve(t, type: "AAAA") } label: { Label("Resolve \(prose(t)) (AAAA)", systemImage: "arrow.turn.down.right") }
+                        Button {
+                            model.resolve(t)
+                        } label: {
+                            Label("Resolve \(prose(t)) (A)", systemImage: "arrow.turn.down.right")
+                        }
+                        Button {
+                            model.resolve(t, type: "AAAA")
+                        } label: {
+                            Label("Resolve \(prose(t)) (AAAA)", systemImage: "arrow.turn.down.right")
+                        }
                     }
                 }
                 .buttonStyle(.link)
@@ -79,7 +99,9 @@ struct DecodedTXTView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Pill(text: (decoded["kind"]?.stringValue ?? "decoded").uppercased(), color: .orange, mono: true)
-                if let bits = decoded["key_bits"] { Text(verbatim: "\(bits.display)-bit \(decoded["key_type"]?.display ?? "")").font(.caption) }
+                if let bits = decoded["key_bits"] {
+                    Text(verbatim: "\(bits.display)-bit \(decoded["key_type"]?.display ?? "")").font(.caption)
+                }
                 if let n = decoded["lookup_count"] { Text(verbatim: "\(n.display)/10 lookups").font(.caption) }
             }
             if let problems = decoded["problems"]?.arrayValue, !problems.isEmpty {
@@ -88,12 +110,19 @@ struct DecodedTXTView: View {
                 Label("No problems found", systemImage: "checkmark.circle").foregroundStyle(.green).font(.callout)
             }
             if let mechs = decoded["mechanisms"]?.arrayValue {
-                Text(verbatim: mechs.map { "\($0["qualifier"]?.display ?? "")\($0["kind"]?.display ?? "")\(($0["value"]?.stringValue).map { ":" + $0 } ?? "")" }.joined(separator: "  "))
-                    .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                Text(
+                    verbatim: mechs.map {
+                        "\($0["qualifier"]?.display ?? "")\($0["kind"]?.display ?? "")\(($0["value"]?.stringValue).map { ":" + $0 } ?? "")"
+                    }.joined(separator: "  ")
+                )
+                .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
             }
             if let tags = decoded["tags"]?.objectValue {
-                Text(tags.keys.sorted().compactMap { k in tags[k].flatMap { $0 == .null ? nil : "\(k)=\($0.display)" } }.joined(separator: "; "))
-                    .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                Text(
+                    tags.keys.sorted().compactMap { k in tags[k].flatMap { $0 == .null ? nil : "\(k)=\($0.display)" } }.joined(
+                        separator: "; ")
+                )
+                .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
             }
         }
         .inset(fill: Color.orange.opacity(0.07))

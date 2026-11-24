@@ -139,7 +139,10 @@ final class AppModel: ObservableObject {
     /// Saves a preset's values and switches to its first endpoint.
     func configurePreset(_ id: String, values: [String: String]) {
         for (k, v) in values { presetValues[k] = v }
-        if let p = resolvedPresets.first(where: { $0.id == id }), let ep = Provider(name: p.name, all: p.endpoints.filter { !$0.needsPlaceholder }).primary.first(where: { $0.transport == "dot" }) ?? p.endpoints.first(where: { !$0.needsPlaceholder }) {
+        if let p = resolvedPresets.first(where: { $0.id == id }),
+            let ep = Provider(name: p.name, all: p.endpoints.filter { !$0.needsPlaceholder }).primary.first(where: { $0.transport == "dot" }
+            ) ?? p.endpoints.first(where: { !$0.needsPlaceholder })
+        {
             selected = ep
         }
     }
@@ -192,7 +195,10 @@ final class AppModel: ObservableObject {
         let n = trimmedName
         var t = type
         // Typing an IP address means a reverse lookup unless a type was chosen deliberately.
-        if !mode.takesDomain, t == "A" || t == "ALL", isIPAddress(n) { t = "PTR"; type = "PTR" }
+        if !mode.takesDomain, t == "A" || t == "ALL", isIPAddress(n) {
+            t = "PTR"
+            type = "PTR"
+        }
         let selector = dkimSelector.trimmingCharacters(in: .whitespaces)
         let question = Question(name: n, type: t, qclass: nil)
         let mode = self.mode
@@ -228,35 +234,48 @@ final class AppModel: ObservableObject {
                 let out: Outcome
                 switch mode {
                 case .query where several:
-                    let r: CompareResult = try await self.core.call("compare", CompareParams(question: question, endpoints: endpoints, options: opts, bootstrap: boot))
+                    let r: CompareResult = try await self.core.call(
+                        "compare", CompareParams(question: question, endpoints: endpoints, options: opts, bootstrap: boot))
                     out = .compare(r)
                 case .query:
                     guard let endpoint else { return }
                     if t == "ALL" {
                         out = .query(try await self.fanOut(question, endpoint, opts, validate, boot))
                     } else {
-                        let r: QueryResult = try await self.core.call("query", QueryParams(question: question, endpoint: endpoint, options: opts, validate: validate, bootstrap: boot))
+                        let r: QueryResult = try await self.core.call(
+                            "query", QueryParams(question: question, endpoint: endpoint, options: opts, validate: validate, bootstrap: boot)
+                        )
                         out = .query([r])
                     }
                 case .trace:
-                    let r: TraceResult = try await self.core.call("trace", TraceParams(question: question, options: opts, validate: validate, bootstrap: boot, rootHints: nil))
+                    let r: TraceResult = try await self.core.call(
+                        "trace", TraceParams(question: question, options: opts, validate: validate, bootstrap: boot, rootHints: nil))
                     out = .trace(r)
                 case .email:
                     guard let endpoint else { return }
-                    let r: EmailResult = try await self.core.call("email", EmailParams(domain: n, endpoint: endpoint, options: opts, bootstrap: boot, extraDkimSelectors: selector.isEmpty ? [] : [selector]))
+                    let r: EmailResult = try await self.core.call(
+                        "email",
+                        EmailParams(
+                            domain: n, endpoint: endpoint, options: opts, bootstrap: boot,
+                            extraDkimSelectors: selector.isEmpty ? [] : [selector]))
                     out = .email(r)
                 case .registry:
                     guard let endpoint else { return }
-                    let r: RDAPResult = try await self.core.call("rdap", RDAPParams(domain: n, endpoint: endpoint, options: opts, bootstrap: boot))
+                    let r: RDAPResult = try await self.core.call(
+                        "rdap", RDAPParams(domain: n, endpoint: endpoint, options: opts, bootstrap: boot))
                     out = .registry(r)
                 case .health:
                     guard let endpoint else { return }
-                    let r: HealthResult = try await self.core.call("health", HealthParams(domain: n, endpoint: endpoint, options: opts, bootstrap: boot))
+                    let r: HealthResult = try await self.core.call(
+                        "health", HealthParams(domain: n, endpoint: endpoint, options: opts, bootstrap: boot))
                     out = .health(r)
                 }
                 self.outcomes[mode] = out
                 self.resultVersion += 1
-                self.remember(HistoryItem(name: n, type: mode.historyType ?? t, mode: several ? HistoryItem.severalResolversMode : mode.rawValue, endpoint: mode.usesResolver && !several ? endpoint : nil))
+                self.remember(
+                    HistoryItem(
+                        name: n, type: mode.historyType ?? t, mode: several ? HistoryItem.severalResolversMode : mode.rawValue,
+                        endpoint: mode.usesResolver && !several ? endpoint : nil))
             } catch is CancellationError {
                 // user cancelled
             } catch let e as CoreError {
@@ -273,7 +292,11 @@ final class AppModel: ObservableObject {
         try await withThrowingTaskGroup(of: (Int, QueryResult).self) { group in
             for (i, t) in RecordTypes.fanOut.enumerated() {
                 group.addTask {
-                    let r: QueryResult = try await self.core.call("query", QueryParams(question: Question(name: q.name, type: t, qclass: nil), endpoint: ep, options: o, validate: validate, bootstrap: boot))
+                    let r: QueryResult = try await self.core.call(
+                        "query",
+                        QueryParams(
+                            question: Question(name: q.name, type: t, qclass: nil), endpoint: ep, options: o, validate: validate,
+                            bootstrap: boot))
                     return (i, r)
                 }
             }
@@ -348,7 +371,11 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             defer { self.fetchingAuthoritative.remove(key) }
             do {
-                let r: TraceResult = try await self.core.call("trace", TraceParams(question: Question(name: q.name, type: q.type, qclass: nil), options: Options(timeoutMs: 4000), validate: false, bootstrap: [], rootHints: nil))
+                let r: TraceResult = try await self.core.call(
+                    "trace",
+                    TraceParams(
+                        question: Question(name: q.name, type: q.type, qclass: nil), options: Options(timeoutMs: 4000), validate: false,
+                        bootstrap: [], rootHints: nil))
                 var ttls: [String: Int] = [:]
                 for rec in r.final.answer where rec.type.uppercased() == q.type.uppercased() { ttls[rec.rdata] = rec.ttl }
                 self.authoritative[key] = AuthoritativeAnswer(ttls: ttls)
@@ -400,7 +427,9 @@ final class AppModel: ObservableObject {
         if let ep = item.endpoint {
             if let same = allEndpoints.first(where: { $0.sameServer(as: ep) }) {
                 selected = same
-            } else if ep.label?.hasPrefix("System") == true, let sys = systemEndpoints.first(where: { $0.transport == ep.transport }) ?? systemEndpoints.first {
+            } else if ep.label?.hasPrefix("System") == true,
+                let sys = systemEndpoints.first(where: { $0.transport == ep.transport }) ?? systemEndpoints.first
+            {
                 selected = sys
             } else if let current = selected {
                 note = "\(ep.title) is no longer in your resolver list, so this ran with \(current.title) instead."
@@ -431,7 +460,8 @@ final class AppModel: ObservableObject {
         // Several resolvers export one command each, in picker order. Trace
         // asks no resolver; the endpoint is a placeholder the core ignores.
         let placeholder = Endpoint(transport: "udp", address: "127.0.0.1:53")
-        let endpoints = mode == .trace ? [placeholder] : (mode == .query && severalResolvers ? comparedEndpoints : (selected.map { [$0] } ?? []))
+        let endpoints =
+            mode == .trace ? [placeholder] : (mode == .query && severalResolvers ? comparedEndpoints : (selected.map { [$0] } ?? []))
         guard !endpoints.isEmpty else { return nil }
         let n = trimmedName
         // ALL is Nordyg's own fan-out; no CLI tool has it (ANY is deprecated,
@@ -441,7 +471,11 @@ final class AppModel: ObservableObject {
             var lines: [String] = []
             for ep in endpoints {
                 for t in types {
-                    let r: ExportResult = try await core.call("export", ExportParams(question: Question(name: n, type: t, qclass: nil), endpoint: ep, options: options, format: format, trace: mode == .trace))
+                    let r: ExportResult = try await core.call(
+                        "export",
+                        ExportParams(
+                            question: Question(name: n, type: t, qclass: nil), endpoint: ep, options: options, format: format,
+                            trace: mode == .trace))
                     lines.append(r.command)
                 }
             }
@@ -472,13 +506,18 @@ final class AppModel: ObservableObject {
     // MARK: history
 
     private func remember(_ item: HistoryItem) {
-        history.removeAll { $0.name == item.name && $0.type == item.type && $0.mode == item.mode && $0.endpoint == item.endpoint && !$0.pinned }
+        history.removeAll {
+            $0.name == item.name && $0.type == item.type && $0.mode == item.mode && $0.endpoint == item.endpoint && !$0.pinned
+        }
         history.insert(item, at: 0)
         HistoryStore.save(history)
     }
 
     func togglePin(_ item: HistoryItem) {
-        if let i = history.firstIndex(of: item) { history[i].pinned.toggle(); HistoryStore.save(history) }
+        if let i = history.firstIndex(of: item) {
+            history[i].pinned.toggle()
+            HistoryStore.save(history)
+        }
     }
 
     func delete(_ item: HistoryItem) {
@@ -507,16 +546,19 @@ final class AppModel: ObservableObject {
 }
 
 func isIPAddress(_ s: String) -> Bool {
-    var v4 = in_addr(); var v6 = in6_addr()
+    var v4 = in_addr()
+    var v6 = in6_addr()
     return inet_pton(AF_INET, s, &v4) == 1 || inet_pton(AF_INET6, s, &v6) == 1
 }
 
 struct AuthoritativeAnswer {
-    var ttls: [String: Int]   // rdata → TTL as published by the authoritative server
+    var ttls: [String: Int]  // rdata → TTL as published by the authoritative server
 }
 
 enum CacheAge: Equatable {
-    case unknown, checking, fresh, cached(Int), differs
+    case unknown, checking, fresh
+    case cached(Int)
+    case differs
 }
 
 /// One resolver operator and every address it publishes. Pickers show the
@@ -549,6 +591,7 @@ extension Endpoint {
     /// The same server, whatever it is called: labels change ("System …"
     /// follows the network), the address and transport do not.
     func sameServer(as other: Endpoint) -> Bool {
-        transport == other.transport && address == other.address && url == other.url && tlsName == other.tlsName && (method ?? "") == (other.method ?? "")
+        transport == other.transport && address == other.address && url == other.url && tlsName == other.tlsName
+            && (method ?? "") == (other.method ?? "")
     }
 }

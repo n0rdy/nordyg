@@ -34,7 +34,8 @@ enum DNSSECWording {
         case "insecure":
             let zone = r.chain.last { $0.status == "insecure" }?.zone ?? r.chain.last?.zone ?? "This name"
             let parent = r.chain.last { $0.status == "secure" }?.zone ?? "its parent"
-            return "\(prose(zone)) is not signed with DNSSEC. \(proseZone(parent).capitalizedFirst) confirms there is no DS record, so there is nothing to validate. This is the normal state for most domains."
+            return
+                "\(prose(zone)) is not signed with DNSSEC. \(proseZone(parent).capitalizedFirst) confirms there is no DS record, so there is nothing to validate. This is the normal state for most domains."
         case "bogus":
             return "Validation failed. The data cannot be trusted, or the zone is misconfigured."
         default:
@@ -51,13 +52,21 @@ enum DNSSECWording {
 enum Glossary {
     static func rcode(_ r: String) -> String {
         switch r {
-        case "NOERROR": return "Response code NOERROR: the server answered normally. Note that NOERROR with zero records means the name exists but has no records of this type."
-        case "NXDOMAIN": return "Response code NXDOMAIN: the name does not exist. The authority section usually carries the zone's SOA record."
-        case "SERVFAIL": return "Response code SERVFAIL: the server could not answer. Common causes are DNSSEC validation failure at the resolver, lame delegations or an unreachable authoritative server."
-        case "REFUSED": return "Response code REFUSED: the server refused the query by policy, for example a recursive query sent to an authoritative-only server."
+        case "NOERROR":
+            return
+                "Response code NOERROR: the server answered normally. Note that NOERROR with zero records means the name exists but has no records of this type."
+        case "NXDOMAIN":
+            return "Response code NXDOMAIN: the name does not exist. The authority section usually carries the zone's SOA record."
+        case "SERVFAIL":
+            return
+                "Response code SERVFAIL: the server could not answer. Common causes are DNSSEC validation failure at the resolver, lame delegations or an unreachable authoritative server."
+        case "REFUSED":
+            return
+                "Response code REFUSED: the server refused the query by policy, for example a recursive query sent to an authoritative-only server."
         case "FORMERR": return "Response code FORMERR: the server could not parse the query."
         case "NOTIMP": return "Response code NOTIMP: the server does not implement this kind of query."
-        case "BADVERS", "BADSIG": return "Extended response code BADVERS/BADSIG: the server rejected the EDNS version or a transaction signature."
+        case "BADVERS", "BADSIG":
+            return "Extended response code BADVERS/BADSIG: the server rejected the EDNS version or a transaction signature."
         case "BADCOOKIE": return "Extended response code BADCOOKIE: the server did not accept the DNS cookie sent with the query."
         default: return "Response code \(r), see the IANA DNS RCODE registry."
         }
@@ -65,15 +74,25 @@ enum Glossary {
 
     static func dnssec(_ s: String) -> String {
         switch s {
-        case "secure": return "DNSSEC secure: every link from the root trust anchor down to this answer was verified by Nordyg itself. The data is exactly what the zone owner signed."
-        case "insecure": return "DNSSEC unsigned: this zone has no DS record at its parent, and the parent proved that. Nothing is wrong. The domain simply does not use DNSSEC, like most domains."
-        case "bogus": return "DNSSEC bogus: a signature, key or DS record failed verification. Either the zone is misconfigured (expired signatures, key rollover gone wrong) or the answer was tampered with. Validating resolvers refuse such answers."
-        default: return "DNSSEC indeterminate: Nordyg could not fetch something it needed (a DNSKEY or DS lookup failed or timed out), so no verdict is possible."
+        case "secure":
+            return
+                "DNSSEC secure: every link from the root trust anchor down to this answer was verified by Nordyg itself. The data is exactly what the zone owner signed."
+        case "insecure":
+            return
+                "DNSSEC unsigned: this zone has no DS record at its parent, and the parent proved that. Nothing is wrong. The domain simply does not use DNSSEC, like most domains."
+        case "bogus":
+            return
+                "DNSSEC bogus: a signature, key or DS record failed verification. Either the zone is misconfigured (expired signatures, key rollover gone wrong) or the answer was tampered with. Validating resolvers refuse such answers."
+        default:
+            return
+                "DNSSEC indeterminate: Nordyg could not fetch something it needed (a DNSKEY or DS lookup failed or timed out), so no verdict is possible."
         }
     }
 
-    static let latency = "Round-trip time of the whole exchange, including connection setup and any TLS handshake. For fan-out queries the slowest one is shown."
-    static let size = "Size of the response message on the wire, in bytes. Over 1232 bytes a UDP answer risks fragmentation and may be truncated."
+    static let latency =
+        "Round-trip time of the whole exchange, including connection setup and any TLS handshake. For fan-out queries the slowest one is shown."
+    static let size =
+        "Size of the response message on the wire, in bytes. Over 1232 bytes a UDP answer risks fragmentation and may be truncated."
     static let server = "The resolver that answered, as labelled in the resolver picker."
     static let hops = "Number of servers asked, from a root server down to the authoritative server for the name."
     static let totalTime = "Sum of the round-trip times of all hops."
@@ -97,7 +116,8 @@ enum Glossary {
         let names: [String: String] = [
             "qr": "QR: this is a response", "aa": "AA: authoritative answer, straight from a server for the zone",
             "tc": "TC: truncated, the answer did not fit", "rd": "RD: recursion was requested",
-            "ra": "RA: the server offers recursion", "ad": "AD: the resolver says it validated the answer with DNSSEC (Nordyg verifies independently)",
+            "ra": "RA: the server offers recursion",
+            "ad": "AD: the resolver says it validated the answer with DNSSEC (Nordyg verifies independently)",
             "cd": "CD: checking disabled, the resolver was asked not to validate",
         ]
         return "Header flags set in the response.\n" + set.map { names[$0] ?? $0 }.joined(separator: "\n")
@@ -116,7 +136,8 @@ enum Glossary {
         case "PTR": return "PTR: reverse mapping from an address back to a name."
         case "SRV": return "SRV: service location with priority, weight, port and target."
         case "CAA": return "CAA: which certificate authorities may issue certificates for the name."
-        case "DS": return "DS: delegation signer, the parent's hash of the child's key-signing key. The link between zones in the DNSSEC chain."
+        case "DS":
+            return "DS: delegation signer, the parent's hash of the child's key-signing key. The link between zones in the DNSSEC chain."
         case "DNSKEY": return "DNSKEY: public key used to sign the zone. KSK signs the key set, ZSK signs the data."
         case "RRSIG": return "RRSIG: DNSSEC signature over a record set, with inception and expiration times."
         case "NSEC": return "NSEC: proves a name or type does not exist, by naming the next name in the zone."
@@ -129,22 +150,31 @@ enum Glossary {
         case "SSHFP": return "SSHFP: fingerprint of an SSH host key."
         case "ANY": return "ANY: asks for all types. Deprecated (RFC 8482), so many servers answer minimally."
         default:
-            if t.uppercased().hasPrefix("TYPE") { return "\(t): a record type Nordyg has no parser for. The data is shown as raw hex (RFC 3597)." }
+            if t.uppercased().hasPrefix("TYPE") {
+                return "\(t): a record type Nordyg has no parser for. The data is shown as raw hex (RFC 3597)."
+            }
             return "Record type \(t)."
         }
     }
 }
 
 extension Glossary {
-    static let cacheUnknown = "Click to find out how old this resolver's copy is. Nordyg fetches the authoritative answer with a trace and compares TTLs. The difference is the time the record has sat in the resolver's cache."
+    static let cacheUnknown =
+        "Click to find out how old this resolver's copy is. Nordyg fetches the authoritative answer with a trace and compares TTLs. The difference is the time the record has sat in the resolver's cache."
     static let cacheChecking = "Tracing to the authoritative server to learn the original TTL…"
     static let cacheFresh = "The TTL matches the authoritative one: the resolver fetched this answer just now, not from its cache."
-    static func cacheAge(_ s: Int) -> String { "The resolver returned a TTL \(s) s lower than the authoritative server publishes, so this copy has been in its cache about that long. Changes made since then are not visible through this resolver until the TTL runs out." }
-    static let cacheDiffers = "The resolver's answer contains data the authoritative server does not currently publish, or a TTL higher than the original. Either a change is still propagating, the resolver overrides or filters this name, or it serves a geographic variant."
-    static let stale = "The resolver flagged this answer as stale (Extended DNS Error 3, RFC 8767): it is past its TTL and was served because a fresh fetch failed or is still in progress."
+    static func cacheAge(_ s: Int) -> String {
+        "The resolver returned a TTL \(s) s lower than the authoritative server publishes, so this copy has been in its cache about that long. Changes made since then are not visible through this resolver until the TTL runs out."
+    }
+    static let cacheDiffers =
+        "The resolver's answer contains data the authoritative server does not currently publish, or a TTL higher than the original. Either a change is still propagating, the resolver overrides or filters this name, or it serves a geographic variant."
+    static let stale =
+        "The resolver flagged this answer as stale (Extended DNS Error 3, RFC 8767): it is past its TTL and was served because a fresh fetch failed or is still in progress."
     static func systemView(_ addrs: [String], overlap: Bool) -> String {
         let list = addrs.isEmpty ? "nothing" : addrs.joined(separator: ", ")
-        return "What this Mac's own resolver (mDNSResponder) returns for the name right now: \(list).\nEvery ordinary app, Safari included, uses that cache. Nordyg queries resolvers directly and bypasses it." + (overlap ? "" : "\nThe Mac sees something different from this answer: its cache is stale, or it uses another resolver.")
+        return
+            "What this Mac's own resolver (mDNSResponder) returns for the name right now: \(list).\nEvery ordinary app, Safari included, uses that cache. Nordyg queries resolvers directly and bypasses it."
+            + (overlap ? "" : "\nThe Mac sees something different from this answer: its cache is stale, or it uses another resolver.")
     }
 }
 

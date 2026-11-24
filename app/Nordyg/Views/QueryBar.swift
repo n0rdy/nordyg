@@ -22,11 +22,15 @@ struct QueryBar: View {
                         Picker("Type", selection: $model.type) {
                             // ALL fans out per type; times several resolvers it
                             // would explode, so it is a one-resolver choice.
-                            ForEach(model.mode == .query && model.severalResolvers ? RecordTypes.all.filter { $0 != "ALL" } : RecordTypes.all, id: \.self) { Text($0).tag($0) }
+                            ForEach(
+                                model.mode == .query && model.severalResolvers ? RecordTypes.all.filter { $0 != "ALL" } : RecordTypes.all,
+                                id: \.self
+                            ) { Text($0).tag($0) }
                         }
                         .pickerStyle(.inline)
                     } label: {
-                        Text(model.type).font(.system(.callout, design: .monospaced).weight(.bold)).foregroundStyle(TypeStyle.ink(model.type))
+                        Text(model.type).font(.system(.callout, design: .monospaced).weight(.bold)).foregroundStyle(
+                            TypeStyle.ink(model.type))
                     }
                 }
                 if model.mode == .query && model.severalResolvers {
@@ -62,23 +66,34 @@ struct QueryBar: View {
             }
             .frame(height: 40)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .textBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(nameFocused ? Color.accentColor.opacity(0.7) : Color.secondary.opacity(0.25), lineWidth: nameFocused ? 1.5 : 1))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10).stroke(
+                    nameFocused ? Color.accentColor.opacity(0.7) : Color.secondary.opacity(0.25), lineWidth: nameFocused ? 1.5 : 1))
 
-            OptionsButton(options: $model.options, validate: $model.validate,
-                          showsValidate: model.mode == .query || model.mode == .trace)
+            OptionsButton(
+                options: $model.options, validate: $model.validate,
+                showsValidate: model.mode == .query || model.mode == .trace)
 
             if model.isRunning {
                 // A plain button: red means "failed" in the results.
                 // Run and Cancel share a size so the bar does not jump.
-                Button { model.cancel() } label: { Label("Cancel", systemImage: "stop.fill").font(.title3).frame(minWidth: 84) }
-                    .controlSize(.extraLarge)
+                Button {
+                    model.cancel()
+                } label: {
+                    Label("Cancel", systemImage: "stop.fill").font(.title3).frame(minWidth: 84)
+                }
+                .controlSize(.extraLarge)
             } else {
                 // As tall as the field, with its text size.
-                Button { model.run() } label: { Label("Run", systemImage: "play.fill").font(.title3.weight(.semibold)).frame(minWidth: 84) }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!model.canRun)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.extraLarge)
+                Button {
+                    model.run()
+                } label: {
+                    Label("Run", systemImage: "play.fill").font(.title3.weight(.semibold)).frame(minWidth: 84)
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!model.canRun)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.extraLarge)
             }
         }
         .padding(12)
@@ -105,17 +120,21 @@ struct Token<Content: View, L: View>: View {
     @ViewBuilder var label: L
 
     var body: some View {
-        Menu { content } label: { label }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .tokenChrome()
+        Menu {
+            content
+        } label: {
+            label
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .tokenChrome()
     }
 }
 
-private extension View {
+extension View {
     /// The rounded tile a token sits in, with the gap to the next one.
-    func tokenChrome() -> some View {
+    fileprivate func tokenChrome() -> some View {
         padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.secondary.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -190,7 +209,11 @@ struct CompareEndpointPicker: View {
         Button {
             open.toggle()
         } label: {
-            Label { Text(verbatim: "\(model.compareSelection.count) resolvers") } icon: { Image(systemName: "checklist") }.font(.callout)
+            Label {
+                Text(verbatim: "\(model.compareSelection.count) resolvers")
+            } icon: {
+                Image(systemName: "checklist")
+            }.font(.callout)
         }
         .buttonStyle(.plain)
         .tokenChrome()
@@ -200,7 +223,10 @@ struct CompareEndpointPicker: View {
                 HStack {
                     Text("Ask these resolvers").font(.headline)
                     Spacer()
-                    Button("Ask one resolver") { open = false; model.severalResolvers = false }
+                    Button("Ask one resolver") {
+                        open = false
+                        model.severalResolvers = false
+                    }
                 }
                 .padding(12)
                 Divider()
@@ -222,7 +248,10 @@ struct CompareEndpointPicker: View {
                 }
                 Divider()
                 HStack {
-                    Button("Add resolver…") { open = false; addResolver() }
+                    Button("Add resolver…") {
+                        open = false
+                        addResolver()
+                    }
                     Spacer()
                 }
                 .padding(12)
@@ -243,7 +272,9 @@ struct OptionsButton: View {
 
     var body: some View {
         let changed = (showsValidate && !validate ? ["validation off"] : []) + options.changed
-        Button { open.toggle() } label: {
+        Button {
+            open.toggle()
+        } label: {
             if changed.isEmpty {
                 Image(systemName: "slider.horizontal.3")
             } else {
@@ -266,7 +297,9 @@ struct OptionsView: View {
         Form {
             if showsValidate {
                 Toggle("Validate DNSSEC", isOn: $validate)
-                    .help("Nordyg checks the chain of trust from the root itself, instead of trusting the resolver's AD flag. Costs a few extra queries.")
+                    .help(
+                        "Nordyg checks the chain of trust from the root itself, instead of trusting the resolver's AD flag. Costs a few extra queries."
+                    )
                 Divider()
             }
             Toggle("Recursion desired (RD)", isOn: bind(\.recursionDesired, true))
@@ -283,7 +316,10 @@ struct OptionsView: View {
                 Text(verbatim: "Timeout: \(options.timeoutMs ?? 5000) ms")
             }
             if !options.changed.isEmpty || (showsValidate && !validate) {
-                Button("Reset to defaults") { options = Options(); validate = true }
+                Button("Reset to defaults") {
+                    options = Options()
+                    validate = true
+                }
             }
         }
         .frame(width: 300)
@@ -308,7 +344,11 @@ struct CustomEndpointSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Custom resolver").font(.headline)
             Picker("Transport", selection: $transport) {
-                Text("UDP").tag("udp"); Text("TCP").tag("tcp"); Text("DoT").tag("dot"); Text("DoH").tag("doh"); Text("DoQ").tag("doq")
+                Text("UDP").tag("udp")
+                Text("TCP").tag("tcp")
+                Text("DoT").tag("dot")
+                Text("DoH").tag("doh")
+                Text("DoQ").tag("doq")
             }
             .pickerStyle(.segmented)
             if transport == "doh" {
@@ -337,15 +377,25 @@ struct CustomEndpointSheet: View {
         var addr = address.trimmingCharacters(in: .whitespaces)
         let defaultPort = (transport == "dot" || transport == "doq") ? 853 : (transport == "doh" ? 443 : 53)
         if !addr.isEmpty, isIPAddress(addr) { addr = SystemResolvers.hostPort(addr, defaultPort) }
-        if transport != "doh", addr.isEmpty { problem = "An IP address is required."; return }
-        if transport == "doh", !url.hasPrefix("https://") { problem = "The URL must start with https://"; return }
-        if (transport == "dot" || transport == "doq"), tlsName.isEmpty { problem = "A TLS name is required."; return }
-        let ep = Endpoint(transport: transport,
-                          address: addr.isEmpty ? nil : addr,
-                          tlsName: tlsName.isEmpty ? nil : tlsName,
-                          url: transport == "doh" ? url : nil,
-                          method: nil,
-                          label: label.isEmpty ? nil : label)
+        if transport != "doh", addr.isEmpty {
+            problem = "An IP address is required."
+            return
+        }
+        if transport == "doh", !url.hasPrefix("https://") {
+            problem = "The URL must start with https://"
+            return
+        }
+        if transport == "dot" || transport == "doq", tlsName.isEmpty {
+            problem = "A TLS name is required."
+            return
+        }
+        let ep = Endpoint(
+            transport: transport,
+            address: addr.isEmpty ? nil : addr,
+            tlsName: tlsName.isEmpty ? nil : tlsName,
+            url: transport == "doh" ? url : nil,
+            method: nil,
+            label: label.isEmpty ? nil : label)
         model.addCustom(ep)
         dismiss()
     }
@@ -356,10 +406,13 @@ struct EndpointCheckbox: View {
     var endpoint: Endpoint
     var title: String?
     var body: some View {
-        Toggle(title ?? endpoint.title, isOn: Binding(
-            get: { model.compareSelection.contains(endpoint) },
-            set: { on in if on { model.compareSelection.insert(endpoint) } else { model.compareSelection.remove(endpoint) } }
-        ))
+        Toggle(
+            title ?? endpoint.title,
+            isOn: Binding(
+                get: { model.compareSelection.contains(endpoint) },
+                set: { on in if on { model.compareSelection.insert(endpoint) } else { model.compareSelection.remove(endpoint) } }
+            )
+        )
         .toggleStyle(.checkbox)
     }
 }
@@ -379,37 +432,47 @@ struct ProviderChecklistRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Toggle(provider.name, isOn: Binding(
-                    get: { isOn },
-                    set: { on in
-                        if on, let ep = provider.primary.first(where: { $0.transport == transport }) {
-                            model.compareSelection.insert(ep)
-                        } else if !on {
-                            provider.all.forEach { model.compareSelection.remove($0) }
+                Toggle(
+                    provider.name,
+                    isOn: Binding(
+                        get: { isOn },
+                        set: { on in
+                            if on, let ep = provider.primary.first(where: { $0.transport == transport }) {
+                                model.compareSelection.insert(ep)
+                            } else if !on {
+                                model.compareSelection.subtract(provider.all)
+                            }
                         }
-                    }
-                ))
+                    )
+                )
                 .toggleStyle(.checkbox)
                 Spacer()
-                Picker("", selection: Binding(
-                    get: { transport },
-                    set: { t in
-                        // Swap the asked address to the new transport.
-                        if let old = selectedPrimary, let new = provider.primary.first(where: { $0.transport == t }) {
-                            model.compareSelection.remove(old)
-                            model.compareSelection.insert(new)
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { transport },
+                        set: { t in
+                            // Swap the asked address to the new transport.
+                            if let old = selectedPrimary, let new = provider.primary.first(where: { $0.transport == t }) {
+                                model.compareSelection.remove(old)
+                                model.compareSelection.insert(new)
+                            }
+                            picked = t
                         }
-                        picked = t
-                    }
-                )) {
+                    )
+                ) {
                     ForEach(provider.primary) { ep in Text(TransportName.display(ep.transport)).tag(ep.transport) }
                 }
                 .pickerStyle(.menu).labelsHidden()
                 .frame(width: 84)
                 .help("Transport to ask \(provider.name) over")
-                Button { expanded.toggle() } label: { Image(systemName: expanded ? "chevron.up" : "ellipsis") }
-                    .buttonStyle(.borderless)
-                    .help(expanded ? "Fewer addresses" : "More addresses: IPv6, secondary, every transport")
+                Button {
+                    expanded.toggle()
+                } label: {
+                    Image(systemName: expanded ? "chevron.up" : "ellipsis")
+                }
+                .buttonStyle(.borderless)
+                .help(expanded ? "Fewer addresses" : "More addresses: IPv6, secondary, every transport")
             }
             if expanded {
                 ForEach(provider.all) { ep in EndpointCheckbox(endpoint: ep).padding(.leading, 22).font(.callout) }
@@ -430,7 +493,8 @@ enum PresetFields {
     static func help(_ presetID: String, _ key: String) -> String {
         switch (presetID, key) {
         case ("nextdns", "profile_id"):
-            return "Find it on my.nextdns.io under Setup: the 6 characters in abc123.dns.nextdns.io. Queries then use your NextDNS configuration, its blocklists and its logs."
+            return
+                "Find it on my.nextdns.io under Setup: the 6 characters in abc123.dns.nextdns.io. Queries then use your NextDNS configuration, its blocklists and its logs."
         default:
             return "The value your provider gave you."
         }
@@ -475,7 +539,10 @@ struct PresetSetupSheet: View {
             if let problem { Text(problem).foregroundStyle(.red).font(.callout) }
             HStack {
                 if keys.contains(where: { model.presetValues[$0] != nil }) {
-                    Button("Remove", role: .destructive) { model.clearPreset(preset.id); dismiss() }
+                    Button("Remove", role: .destructive) {
+                        model.clearPreset(preset.id)
+                        dismiss()
+                    }
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -491,7 +558,10 @@ struct PresetSetupSheet: View {
         var clean: [String: String] = [:]
         for k in preset.requires ?? [] {
             let v = (values[k] ?? "").trimmingCharacters(in: .whitespaces).lowercased()
-            if let p = PresetFields.problem(k, v) { problem = p; return }
+            if let p = PresetFields.problem(k, v) {
+                problem = p
+                return
+            }
             clean[k] = v
         }
         model.configurePreset(preset.id, values: clean)

@@ -2,7 +2,8 @@
 #   make test     run Go tests (uncached, since they also write the samples make smoke decodes)
 #   make archive  build the universal static library core/build/libnordyg.a + header
 #   make smoke    build and run the Swift bridge harness against the archive
-#   make lint     golangci-lint on the core
+#   make lint     golangci-lint on the core, swift format lint on the app
+#   make format   rewrite the app's Swift in the house format (app/.swift-format)
 #   make app      build the SwiftUI app (Debug, ad-hoc signed)
 #   make run      build and open the app
 #   make debug-tool  build app/build/nordyg-debug, which drives a running Debug build
@@ -36,7 +37,7 @@ SMOKE    := app/build/nordyg-smoke
 # smoke harness to decode with the app's own types.
 SAMPLES  := app/build/samples
 
-.PHONY: all test archive smoke lint clean
+.PHONY: all test archive smoke lint format clean
 
 all: archive
 
@@ -45,8 +46,14 @@ test:
 	cd $(CORE) && NORDYG_SAMPLES=$(abspath $(SAMPLES)) go test -count=1 ./...
 	@touch $(SAMPLES)/.stamp
 
+SWIFT_SRC := app/Nordyg app/smoke app/tools
+
 lint:
 	cd $(CORE) && golangci-lint run ./...
+	swift format lint --strict -r $(SWIFT_SRC)
+
+format:
+	swift format format -i -r $(SWIFT_SRC)
 
 $(BUILD)/libnordyg_amd64.a: $(GO_SRC)
 	@mkdir -p $(BUILD)

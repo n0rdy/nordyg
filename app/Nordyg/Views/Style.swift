@@ -30,20 +30,21 @@ enum TypeStyle {
         let tint = color(type)
         guard tint != .secondary else { return .secondary }
         let base = NSColor(tint)
-        return Color(nsColor: NSColor(name: nil) { appearance in
-            guard appearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua else { return base }
-            var light = base
-            appearance.performAsCurrentDrawingAppearance {
-                light = base.usingColorSpace(.sRGB) ?? base
-            }
-            let badge = NSColor.white.blended(withFraction: 0.16, of: light) ?? .white
-            var ink = light
-            for step in stride(from: 0.0, through: 0.85, by: 0.05) {
-                ink = light.blended(withFraction: step, of: .black) ?? light
-                if contrast(ink, badge) >= 4.5 { break }
-            }
-            return ink
-        })
+        return Color(
+            nsColor: NSColor(name: nil) { appearance in
+                guard appearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua else { return base }
+                var light = base
+                appearance.performAsCurrentDrawingAppearance {
+                    light = base.usingColorSpace(.sRGB) ?? base
+                }
+                let badge = NSColor.white.blended(withFraction: 0.16, of: light) ?? .white
+                var ink = light
+                for step in stride(from: 0.0, through: 0.85, by: 0.05) {
+                    ink = light.blended(withFraction: step, of: .black) ?? light
+                    if contrast(ink, badge) >= 4.5 { break }
+                }
+                return ink
+            })
     }
 
     /// WCAG contrast ratio of two sRGB colours.
@@ -124,7 +125,7 @@ struct TabRow<Content: View>: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
-                .tint(.accentColor) // the default grey selection is too faint to spot
+                .tint(.accentColor)  // the default grey selection is too faint to spot
             Spacer()
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -180,7 +181,9 @@ enum DNSSECStyle {
 struct StatusBadge: View {
     var status: String
     var body: some View {
-        Pill(text: DNSSECWording.label(status), icon: DNSSECStyle.icon(status), color: DNSSECStyle.color(status), help: Glossary.dnssec(status))
+        Pill(
+            text: DNSSECWording.label(status), icon: DNSSECStyle.icon(status), color: DNSSECStyle.color(status),
+            help: Glossary.dnssec(status))
     }
 }
 
@@ -216,11 +219,19 @@ extension View {
 }
 
 func severityIcon(_ s: String) -> String {
-    switch s { case "error": return "xmark.octagon.fill"; case "warning": return "exclamationmark.triangle.fill"; default: return "info.circle" }
+    switch s {
+    case "error": return "xmark.octagon.fill"
+    case "warning": return "exclamationmark.triangle.fill"
+    default: return "info.circle"
+    }
 }
 
 func severityColor(_ s: String) -> Color {
-    switch s { case "error": return .red; case "warning": return .orange; default: return .secondary }
+    switch s {
+    case "error": return .red
+    case "warning": return .orange
+    default: return .secondary
+    }
 }
 
 /// Reduced-motion aware animation for result changes.
@@ -262,6 +273,8 @@ enum VerdictStyle {
 struct VerdictPill: View {
     var verdict: Verdict
     var body: some View {
-        Pill(text: VerdictStyle.label(verdict.status), icon: VerdictStyle.icon(verdict.status), color: VerdictStyle.color(verdict.status), help: verdict.message)
+        Pill(
+            text: VerdictStyle.label(verdict.status), icon: VerdictStyle.icon(verdict.status), color: VerdictStyle.color(verdict.status),
+            help: verdict.message)
     }
 }

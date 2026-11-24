@@ -32,15 +32,19 @@ extension Mode {
     var explanation: String {
         switch self {
         case .query:
-            return "Ask a resolver what it has for a name and see everything it sent back, with a DNSSEC check Nordyg does itself.\nPick “Several resolvers…” in the resolver menu to compare them."
+            return
+                "Ask a resolver what it has for a name and see everything it sent back, with a DNSSEC check Nordyg does itself.\nPick “Several resolvers…” in the resolver menu to compare them."
         case .trace:
-            return "Follow a name from the root servers down to the server that holds the answer, one hop at a time, with no cache in the way."
+            return
+                "Follow a name from the root servers down to the server that holds the answer, one hop at a time, with no cache in the way."
         case .email:
-            return "Check whether a domain's mail is set up right: MX, SPF, DKIM, DMARC, MTA-STS, DANE, BIMI and blocklists, each with a verdict."
+            return
+                "Check whether a domain's mail is set up right: MX, SPF, DKIM, DMARC, MTA-STS, DANE, BIMI and blocklists, each with a verdict."
         case .registry:
             return "See who registered a domain, when it expires and its status, from RDAP, or from WHOIS where a TLD has no RDAP."
         case .health:
-            return "Check that a domain's DNS is delegated and served correctly, by asking every one of its nameservers directly, and that the certificate its website serves is valid."
+            return
+                "Check that a domain's DNS is delegated and served correctly, by asking every one of its nameservers directly, and that the certificate its website serves is valid."
         }
     }
 

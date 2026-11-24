@@ -7,23 +7,46 @@ struct RegistryView: View {
     var body: some View {
         VStack(spacing: 0) {
             StatusStrip {
-                Pill(text: result.source.uppercased(), icon: "building.columns", color: .accentColor, mono: true,
-                     help: result.source == "rdap" ? "Registration Data Access Protocol (RFC 9083), the JSON successor to WHOIS, mandatory for generic TLDs since January 2025." : "Classic WHOIS over port 43 (RFC 3912). This TLD publishes no RDAP server, so the text was parsed instead.")
+                Pill(
+                    text: result.source.uppercased(), icon: "building.columns", color: .accentColor, mono: true,
+                    help: result.source == "rdap"
+                        ? "Registration Data Access Protocol (RFC 9083), the JSON successor to WHOIS, mandatory for generic TLDs since January 2025."
+                        : "Classic WHOIS over port 43 (RFC 3912). This TLD publishes no RDAP server, so the text was parsed instead.")
                 if result.found {
                     if let d = result.expiresInDays {
-                        Pill(text: RegistryDates.expiryLabel(d), icon: "calendar", color: d < 0 ? .red : d < 30 ? .orange : .green, mono: true, help: "Time until the registration expires, from the \(result.source.uppercased()) expiration date. Most registrars renew automatically before then.")
+                        Pill(
+                            text: RegistryDates.expiryLabel(d), icon: "calendar", color: d < 0 ? .red : d < 30 ? .orange : .green,
+                            mono: true,
+                            help:
+                                "Time until the registration expires, from the \(result.source.uppercased()) expiration date. Most registrars renew automatically before then."
+                        )
                     }
                     if result.dnssec.known {
-                        Pill(text: result.dnssec.signed ? "DS at registry" : "no DS at registry", icon: result.dnssec.signed ? "lock.fill" : "lock.open", color: result.dnssec.signed ? .green : .secondary,
-                             help: "Whether the registry holds DS records for this delegation, which is what makes the zone's DNSSEC signatures count. The Query and Trace modes validate the actual chain.")
+                        Pill(
+                            text: result.dnssec.signed ? "DS at registry" : "no DS at registry",
+                            icon: result.dnssec.signed ? "lock.fill" : "lock.open", color: result.dnssec.signed ? .green : .secondary,
+                            help:
+                                "Whether the registry holds DS records for this delegation, which is what makes the zone's DNSSEC signatures count. The Query and Trace modes validate the actual chain."
+                        )
                     }
                     if result.nsMismatch {
-                        Pill(text: "NS mismatch", icon: "exclamationmark.triangle.fill", color: .orange, help: "The nameservers on file at the registry differ from the NS records the zone publishes. The registry's list is what the parent zone delegates to. The zone's own list is what resolvers see afterwards. They should agree.")
+                        Pill(
+                            text: "NS mismatch", icon: "exclamationmark.triangle.fill", color: .orange,
+                            help:
+                                "The nameservers on file at the registry differ from the NS records the zone publishes. The registry's list is what the parent zone delegates to. The zone's own list is what resolvers see afterwards. They should agree."
+                        )
                     }
                 } else {
-                    Pill(text: "not registered", icon: "questionmark.circle", color: .orange, help: "The registry has no record for this name. It may be available, reserved, or under a TLD whose registry only answers for exact registered names.")
+                    Pill(
+                        text: "not registered", icon: "questionmark.circle", color: .orange,
+                        help:
+                            "The registry has no record for this name. It may be available, reserved, or under a TLD whose registry only answers for exact registered names."
+                    )
                 }
-                Pill(text: RegistryDates.host(result.server), icon: "server.rack", mono: true, help: "The registry server that answered: \(result.server)" + (result.registrarServer.map { "\nRegistrar server followed for contacts: \($0)" } ?? ""))
+                Pill(
+                    text: RegistryDates.host(result.server), icon: "server.rack", mono: true,
+                    help: "The registry server that answered: \(result.server)"
+                        + (result.registrarServer.map { "\nRegistrar server followed for contacts: \($0)" } ?? ""))
             }
             Divider()
             ScrollView {
@@ -63,10 +86,12 @@ struct RegistryView: View {
                     }
                     // Notices are the registry's legal boilerplate titles ("Terms of
                     // Use", "Disclaimer"); they live in the raw response.
-                    Text(result.bootstrapSource == "embedded"
-                         ? "The registry's RDAP server came from the list built into Nordyg, as IANA's live list could not be fetched."
-                         : "The registry's RDAP server came from IANA's live list.")
-                        .font(.caption).foregroundStyle(.tertiary)
+                    Text(
+                        result.bootstrapSource == "embedded"
+                            ? "The registry's RDAP server came from the list built into Nordyg, as IANA's live list could not be fetched."
+                            : "The registry's RDAP server came from IANA's live list."
+                    )
+                    .font(.caption).foregroundStyle(.tertiary)
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -141,11 +166,36 @@ struct RegistrarCard: View {
     var body: some View {
         InfoCard("Registrar", icon: "building.2") {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                if let n = r.name { GridRow { Text("Name").foregroundStyle(.secondary); Text(n).fontWeight(.semibold) } }
-                if let id = r.ianaId { GridRow { Text("IANA ID").foregroundStyle(.secondary); Text(id).font(.system(.body, design: .monospaced)) } }
-                if let u = r.url, let url = URL(string: u.hasPrefix("http") ? u : "https://" + u) { GridRow { Text("Website").foregroundStyle(.secondary); Link(u, destination: url) } }
-                if let e = r.abuseEmail { GridRow { Text("Abuse").foregroundStyle(.secondary); Text(e).textSelection(.enabled) } }
-                if let p = r.abusePhone { GridRow { Text("Abuse phone").foregroundStyle(.secondary); Text(p).textSelection(.enabled) } }
+                if let n = r.name {
+                    GridRow {
+                        Text("Name").foregroundStyle(.secondary)
+                        Text(n).fontWeight(.semibold)
+                    }
+                }
+                if let id = r.ianaId {
+                    GridRow {
+                        Text("IANA ID").foregroundStyle(.secondary)
+                        Text(id).font(.system(.body, design: .monospaced))
+                    }
+                }
+                if let u = r.url, let url = URL(string: u.hasPrefix("http") ? u : "https://" + u) {
+                    GridRow {
+                        Text("Website").foregroundStyle(.secondary)
+                        Link(u, destination: url)
+                    }
+                }
+                if let e = r.abuseEmail {
+                    GridRow {
+                        Text("Abuse").foregroundStyle(.secondary)
+                        Text(e).textSelection(.enabled)
+                    }
+                }
+                if let p = r.abusePhone {
+                    GridRow {
+                        Text("Abuse phone").foregroundStyle(.secondary)
+                        Text(p).textSelection(.enabled)
+                    }
+                }
                 if r.name == nil && r.ianaId == nil { GridRow { Text("Not disclosed by this source").foregroundStyle(.secondary) } }
             }
         }
@@ -157,18 +207,33 @@ struct DatesCard: View {
     var body: some View {
         InfoCard("Dates", icon: "calendar") {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                GridRow { Text("Registered").foregroundStyle(.secondary); Text(pretty(result.registered)).font(.system(.body, design: .monospaced)) }
+                GridRow {
+                    Text("Registered").foregroundStyle(.secondary)
+                    Text(pretty(result.registered)).font(.system(.body, design: .monospaced))
+                }
                 GridRow {
                     Text("Expires").foregroundStyle(.secondary)
                     HStack(spacing: 8) {
                         Text(pretty(result.expires)).font(.system(.body, design: .monospaced))
-                        if let d = result.expiresInDays { Text(verbatim: "(\(RegistryDates.span(d)))").foregroundStyle(d < 30 ? Color.orange : Color.secondary) }
+                        if let d = result.expiresInDays {
+                            Text(verbatim: "(\(RegistryDates.span(d)))").foregroundStyle(d < 30 ? Color.orange : Color.secondary)
+                        }
                     }
                 }
-                GridRow { Text("Updated").foregroundStyle(.secondary); Text(pretty(result.updated)).font(.system(.body, design: .monospaced)) }
+                GridRow {
+                    Text("Updated").foregroundStyle(.secondary)
+                    Text(pretty(result.updated)).font(.system(.body, design: .monospaced))
+                }
                 // The database's own timestamp says nothing about the domain.
-                ForEach(result.events.filter { !["registration", "expiration", "last changed", "last update of rdap database"].contains($0.action.lowercased()) }, id: \.self) { e in
-                    GridRow { Text(e.action.capitalizedFirst).foregroundStyle(.secondary); Text(pretty(e.date)).font(.system(.body, design: .monospaced)) }
+                ForEach(
+                    result.events.filter {
+                        !["registration", "expiration", "last changed", "last update of rdap database"].contains($0.action.lowercased())
+                    }, id: \.self
+                ) { e in
+                    GridRow {
+                        Text(e.action.capitalizedFirst).foregroundStyle(.secondary)
+                        Text(pretty(e.date)).font(.system(.body, design: .monospaced))
+                    }
                 }
             }
         }
@@ -191,7 +256,8 @@ struct StatusCard: View {
                 ForEach(status, id: \.code) { s in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Pill(text: RegistryDates.words(s.code), color: color(s.code), mono: true)
-                        Text(s.meaning.isEmpty ? "No description available for this code." : s.meaning).font(.callout).foregroundStyle(.secondary)
+                        Text(s.meaning.isEmpty ? "No description available for this code." : s.meaning).font(.callout).foregroundStyle(
+                            .secondary)
                     }
                 }
             }
@@ -227,7 +293,8 @@ struct NameserversCard: View {
             ForEach(names, id: \.self) { ns in
                 let agreed = other.isEmpty || other.contains(ns)
                 HStack(spacing: 6) {
-                    Image(systemName: agreed ? "checkmark.circle" : "exclamationmark.circle").foregroundStyle(agreed ? Color.green : Color.orange)
+                    Image(systemName: agreed ? "checkmark.circle" : "exclamationmark.circle").foregroundStyle(
+                        agreed ? Color.green : Color.orange)
                     Text(ns).font(.system(.callout, design: .monospaced))
                 }
             }
@@ -245,8 +312,11 @@ struct ContactsCard: View {
                 if !hidden.isEmpty {
                     // One line instead of REDACTED repeated per field and role.
                     let privacy = hidden.compactMap(\.org).first { !$0.uppercased().contains("REDACTED") }
-                    Text(verbatim: "\(Array(Set(hidden.flatMap(\.roles))).sorted().joined(separator: ", ")): redacted for privacy" + (privacy.map { " (\($0))" } ?? ""))
-                        .foregroundStyle(.secondary)
+                    Text(
+                        verbatim: "\(Array(Set(hidden.flatMap(\.roles))).sorted().joined(separator: ", ")): redacted for privacy"
+                            + (privacy.map { " (\($0))" } ?? "")
+                    )
+                    .foregroundStyle(.secondary)
                 }
                 // Contacts that are the same entity (a privacy service answers
                 // for every role) merge; roles sit in one column so the details
@@ -269,27 +339,38 @@ struct ContactsCard: View {
                                         Text(e).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
                                     }
                                 }
-                                if let p = c.phone, !p.isEmpty { Text(p).font(.system(.callout, design: .monospaced)).textSelection(.enabled) }
-                                if let h = c.handle, !h.isEmpty, c.name == nil && c.org == nil { Text(verbatim: "handle \(h)").foregroundStyle(.secondary) }
+                                if let p = c.phone, !p.isEmpty {
+                                    Text(p).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                                }
+                                if let h = c.handle, !h.isEmpty, c.name == nil && c.org == nil {
+                                    Text(verbatim: "handle \(h)").foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
                 }
-                Text("Most registries redact personal data since 2018, so what appears here is only what the source publishes.").font(.caption).foregroundStyle(.tertiary)
+                Text("Most registries redact personal data since 2018, so what appears here is only what the source publishes.").font(
+                    .caption
+                ).foregroundStyle(.tertiary)
             }
         }
     }
 }
 
 extension ContactsCard {
-    struct Group { var roles: [String]; var contact: RDAPContact }
+    struct Group {
+        var roles: [String]
+        var contact: RDAPContact
+    }
 
     /// Contacts with the same name, organisation and phone are one entity
     /// listed under several roles.
     static func merged(_ contacts: [RDAPContact]) -> [Group] {
         var out: [Group] = []
         for c in contacts {
-            if let i = out.firstIndex(where: { $0.contact.name == c.name && $0.contact.org == c.org && $0.contact.phone == c.phone && (c.name != nil || c.org != nil) }) {
+            if let i = out.firstIndex(where: {
+                $0.contact.name == c.name && $0.contact.org == c.org && $0.contact.phone == c.phone && (c.name != nil || c.org != nil)
+            }) {
                 out[i].roles.append(contentsOf: c.roles.filter { !out[i].roles.contains($0) })
             } else {
                 out.append(Group(roles: c.roles, contact: c))
@@ -312,10 +393,14 @@ struct RegistryDNSSECCard: View {
             if d.signed {
                 Text(d.ds.isEmpty ? "The registry reports the delegation as signed." : "DS records held by the registry:").font(.callout)
                 ForEach(Array(d.ds.enumerated()), id: \.offset) { _, ds in
-                    Text(verbatim: "tag \(ds.keyTag) · alg \(ds.algorithm) · digest \(ds.digestType) · \(ds.digest)").font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                    Text(verbatim: "tag \(ds.keyTag) · alg \(ds.algorithm) · digest \(ds.digestType) · \(ds.digest)").font(
+                        .system(.callout, design: .monospaced)
+                    ).textSelection(.enabled)
                 }
             } else {
-                Text("No DS record at the registry: the zone is not signed as far as resolvers are concerned, even if it publishes DNSKEYs. Enabling DNSSEC means giving your registrar the DS record.").font(.callout).foregroundStyle(.secondary)
+                Text(
+                    "No DS record at the registry: the zone is not signed as far as resolvers are concerned, even if it publishes DNSKEYs. Enabling DNSSEC means giving your registrar the DS record."
+                ).font(.callout).foregroundStyle(.secondary)
             }
         }
     }

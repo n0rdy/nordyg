@@ -30,8 +30,12 @@ struct QueryResultView: View {
                 // What dig prints in its header, as one quiet sentence. Only
                 // flags that tell you something are named, in words; the full
                 // set is in Details.
-                Meta(text: "\(ms(results.map(\.exchange.rttMs).max() ?? 0)) over \(TransportName.display(r.exchange.protocol)) from \(r.exchange.endpoint.title)" + (r.exchange.truncatedRetry ? " (retried after truncation)" : ""),
-                     help: Glossary.latency + "\n\n" + Glossary.transport(r.exchange.protocol, truncated: r.exchange.truncatedRetry) + "\n\n" + Glossary.server + " " + r.exchange.endpoint.summary)
+                Meta(
+                    text:
+                        "\(ms(results.map(\.exchange.rttMs).max() ?? 0)) over \(TransportName.display(r.exchange.protocol)) from \(r.exchange.endpoint.title)"
+                        + (r.exchange.truncatedRetry ? " (retried after truncation)" : ""),
+                    help: Glossary.latency + "\n\n" + Glossary.transport(r.exchange.protocol, truncated: r.exchange.truncatedRetry) + "\n\n"
+                        + Glossary.server + " " + r.exchange.endpoint.summary)
                 Dot()
                 Meta(text: "\(r.message.sizeBytes) bytes", help: Glossary.size)
                 ForEach(FlagNotes.notes(r.message.flags), id: \.self) { note in
@@ -94,7 +98,10 @@ struct RecordsView: View {
         var i = 0
         for m in messages {
             for (sec, recs) in [("Answer", m.answer), ("Authority", m.authority), ("Additional", m.additional)] {
-                for r in recs { out.append(RecordRow(id: i, section: sec, record: r)); i += 1 }
+                for r in recs {
+                    out.append(RecordRow(id: i, section: sec, record: r))
+                    i += 1
+                }
             }
         }
         return out
@@ -143,11 +150,14 @@ struct RecordsView: View {
             TableColumn("Section") { Text($0.section).foregroundStyle(.secondary) }.width(min: 60, ideal: 78, max: 100)
             TableColumn("Type") { TypeBadge(type: $0.record.type) }.width(min: 60, ideal: 72, max: 110)
             TableColumn("Name") { Text($0.record.name).font(.system(.body, design: .monospaced)) }.width(min: 120, ideal: 220)
-            TableColumn("TTL") { Text(verbatim: "\($0.record.ttl)").monospacedDigit().foregroundStyle(.secondary) }.width(min: 50, ideal: 64, max: 90)
+            TableColumn("TTL") { Text(verbatim: "\($0.record.ttl)").monospacedDigit().foregroundStyle(.secondary) }.width(
+                min: 50, ideal: 64, max: 90)
             TableColumn("Data") { row in
                 HStack(spacing: 6) {
                     Text(row.record.rdata).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(.middle)
-                    if row.record.decoded != nil { Image(systemName: "text.magnifyingglass").foregroundStyle(.orange).help("Decoded, select the row for details") }
+                    if row.record.decoded != nil {
+                        Image(systemName: "text.magnifyingglass").foregroundStyle(.orange).help("Decoded, select the row for details")
+                    }
                 }
             }
         }
@@ -188,7 +198,11 @@ struct RawView: View {
             Divider()
             HStack {
                 Spacer()
-                Button { Pasteboard.copy(text) } label: { Label("Copy", systemImage: "doc.on.doc") }.padding(8)
+                Button {
+                    Pasteboard.copy(text)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }.padding(8)
             }
         }
     }

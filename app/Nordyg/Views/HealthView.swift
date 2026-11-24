@@ -10,7 +10,10 @@ struct HealthView: View {
             StatusStrip {
                 VerdictPill(verdict: result.overall)
                 // Name the zone unless the message already does.
-                Text(verbatim: result.overall.message.contains(prose(result.zone)) ? result.overall.message : "\(prose(result.zone)): \(result.overall.message)").font(.callout)
+                Text(
+                    verbatim: result.overall.message.contains(prose(result.zone))
+                        ? result.overall.message : "\(prose(result.zone)): \(result.overall.message)"
+                ).font(.callout)
             }
             Divider()
             ScrollView {
@@ -63,8 +66,11 @@ struct FindingList: View {
 struct DelegationCard: View {
     var d: HealthDelegation
     var body: some View {
-        CheckCard("Delegation", subtitle: d.parent.isEmpty || d.parentNs.isEmpty ? "NS" : "NS at \(proseZone(d.parent)) vs the zone", verdict: d.verdict,
-                  hasDetails: !(d.parentNs.isEmpty && d.childNs.isEmpty) || !d.findings.beyond(d.verdict).isEmpty) {
+        CheckCard(
+            "Delegation", subtitle: d.parent.isEmpty || d.parentNs.isEmpty ? "NS" : "NS at \(proseZone(d.parent)) vs the zone",
+            verdict: d.verdict,
+            hasDetails: !(d.parentNs.isEmpty && d.childNs.isEmpty) || !d.findings.beyond(d.verdict).isEmpty
+        ) {
             let names = Array(Set(d.parentNs + d.childNs)).sorted()
             if !names.isEmpty {
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 3) {
@@ -97,11 +103,17 @@ struct Presence: View {
 struct ZoneServersCard: View {
     var section: HealthNameservers
     var body: some View {
-        CheckCard("Nameservers", subtitle: "every address, asked directly", verdict: section.verdict, startOpen: true, hasDetails: !section.servers.isEmpty) {
+        CheckCard(
+            "Nameservers", subtitle: "every address, asked directly", verdict: section.verdict, startOpen: true,
+            hasDetails: !section.servers.isEmpty
+        ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
                     GridRow {
-                        ForEach(["", "nameserver", "address", "serial", "authoritative", "TCP", "EDNS", "zone transfer", "recursion", "time"], id: \.self) { h in
+                        ForEach(
+                            ["", "nameserver", "address", "serial", "authoritative", "TCP", "EDNS", "zone transfer", "recursion", "time"],
+                            id: \.self
+                        ) { h in
                             Text(h).foregroundStyle(.secondary)
                         }
                     }
@@ -113,7 +125,10 @@ struct ZoneServersCard: View {
                             Text(prose(s.name)).fontWeight(.semibold)
                             Text(s.ip.isEmpty ? "no address" : s.ip).foregroundStyle(s.ip.isEmpty ? Color.red : Color.primary)
                             Text(s.serial.map(String.init) ?? "—")
-                            Check(ok: s.answered && s.authoritative, label: s.answered ? (s.authoritative ? "yes" : (s.rcode == "NOERROR" ? "no" : (s.rcode ?? "?"))) : "no answer")
+                            Check(
+                                ok: s.answered && s.authoritative,
+                                label: s.answered
+                                    ? (s.authoritative ? "yes" : (s.rcode == "NOERROR" ? "no" : (s.rcode ?? "?"))) : "no answer")
                             Check(ok: s.tcp, label: s.tcp ? "yes" : "no")
                             Check(ok: s.edns, label: s.edns ? "yes" : "no", warnOnly: true)
                             Check(ok: s.axfr != "allowed", label: axfrLabel(s.axfr), warnOnly: true)
@@ -209,7 +224,8 @@ struct GlueCard: View {
         CheckCard("Glue", subtitle: "addresses the parent hands out", verdict: section.verdict, hasDetails: !section.entries.isEmpty) {
             let inside = section.entries.filter(\.inBailiwick)
             if inside.isEmpty {
-                Text("Every nameserver is outside the zone, so resolvers look its address up separately.").foregroundStyle(.secondary).font(.callout)
+                Text("Every nameserver is outside the zone, so resolvers look its address up separately.").foregroundStyle(.secondary).font(
+                    .callout)
             } else {
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 3) {
                     GridRow {
@@ -220,9 +236,11 @@ struct GlueCard: View {
                     }
                     ForEach(inside, id: \.name) { e in
                         GridRow {
-                            Image(systemName: e.match ? "checkmark.circle.fill" : "xmark.circle.fill").foregroundStyle(e.match ? Color.green : Color.red)
+                            Image(systemName: e.match ? "checkmark.circle.fill" : "xmark.circle.fill").foregroundStyle(
+                                e.match ? Color.green : Color.red)
                             Text(prose(e.name)).fontWeight(.semibold)
-                            Text(e.parent.isEmpty ? "none" : e.parent.joined(separator: "  ")).foregroundStyle(e.parent.isEmpty ? Color.red : Color.primary)
+                            Text(e.parent.isEmpty ? "none" : e.parent.joined(separator: "  ")).foregroundStyle(
+                                e.parent.isEmpty ? Color.red : Color.primary)
                             Text(e.child.isEmpty ? "none" : e.child.joined(separator: "  "))
                         }
                     }
@@ -238,12 +256,16 @@ struct ZoneDNSSECCard: View {
     var body: some View {
         // Without a validation result there is no status, but there can
         // still be DS records and findings about them.
-        CheckCard("Signing", subtitle: "DNSSEC", verdict: section.verdict,
-                  hasDetails: !section.status.isEmpty || !section.ds.isEmpty || !section.findings.beyond(section.verdict).isEmpty) {
+        CheckCard(
+            "Signing", subtitle: "DNSSEC", verdict: section.verdict,
+            hasDetails: !section.status.isEmpty || !section.ds.isEmpty || !section.findings.beyond(section.verdict).isEmpty
+        ) {
             if !section.status.isEmpty {
                 HStack(spacing: 8) {
                     StatusBadge(status: section.status)
-                    if let r = section.result, !r.reason.isEmpty, !section.verdict.message.contains(r.reason) { Text(r.reason).foregroundStyle(.secondary).textSelection(.enabled) }
+                    if let r = section.result, !r.reason.isEmpty, !section.verdict.message.contains(r.reason) {
+                        Text(r.reason).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
                 }
             }
             ForEach(Array(section.ds.enumerated()), id: \.offset) { _, d in
@@ -293,15 +315,19 @@ struct HTTPSCard: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
                                 GridRow {
-                                    ForEach(["", "address", "issued by", "valid until", "certificate"], id: \.self) { Text($0).foregroundStyle(.secondary) }
+                                    ForEach(["", "address", "issued by", "valid until", "certificate"], id: \.self) {
+                                        Text($0).foregroundStyle(.secondary)
+                                    }
                                 }
                                 ForEach(h.servers.filter { !$0.skipped }, id: \.ip) { s in
                                     GridRow {
-                                        Image(systemName: VerdictStyle.icon(Self.status(s))).foregroundStyle(VerdictStyle.color(Self.status(s)))
+                                        Image(systemName: VerdictStyle.icon(Self.status(s))).foregroundStyle(
+                                            VerdictStyle.color(Self.status(s)))
                                         Text(s.ip).textSelection(.enabled)
                                         Text(s.chain.first?.issuer ?? "—")
                                         Text(verbatim: s.chain.first.map { Self.date($0.notAfter) } ?? "—")
-                                        Text(Self.label(s)).foregroundStyle(Self.status(s) == "ok" ? Color.secondary : VerdictStyle.color(Self.status(s)))
+                                        Text(Self.label(s)).foregroundStyle(
+                                            Self.status(s) == "ok" ? Color.secondary : VerdictStyle.color(Self.status(s)))
                                     }
                                 }
                             }
@@ -388,7 +414,8 @@ enum HealthReport {
                         continue
                     }
                     let answer = sv.answered ? (sv.authoritative ? "authoritative" : (sv.rcode ?? "?")) : "none"
-                    s += "| \(prose(sv.name)) | \(sv.ip.isEmpty ? "no address" : sv.ip) | \(sv.serial.map(String.init) ?? "") | \(answer) | \(sv.tcp ? "yes" : "no") | \(sv.edns ? "yes" : "no") | \(sv.axfr) | \(sv.recursion ? "open" : "closed") |\n"
+                    s +=
+                        "| \(prose(sv.name)) | \(sv.ip.isEmpty ? "no address" : sv.ip) | \(sv.serial.map(String.init) ?? "") | \(answer) | \(sv.tcp ? "yes" : "no") | \(sv.edns ? "yes" : "no") | \(sv.axfr) | \(sv.recursion ? "open" : "closed") |\n"
                 }
                 s += "\n"
             }

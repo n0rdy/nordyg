@@ -17,15 +17,24 @@ struct CompareView: View {
     private var content: some View {
         VStack(spacing: 0) {
             StatusStrip {
-                Pill(text: result.consistent ? "all agree" : "disagreement",
-                     icon: result.consistent ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
-                     color: result.consistent ? .green : .orange,
-                     help: result.consistent ? "Every resolver returned the same set of records. TTL and record order are ignored in the comparison." : "Resolvers returned different data. Common causes: a recent change still propagating, geo-based answers, or a resolver that filters or blocks the name.")
+                Pill(
+                    text: result.consistent ? "all agree" : "disagreement",
+                    icon: result.consistent ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+                    color: result.consistent ? .green : .orange,
+                    help: result.consistent
+                        ? "Every resolver returned the same set of records. TTL and record order are ignored in the comparison."
+                        : "Resolvers returned different data. Common causes: a recent change still propagating, geo-based answers, or a resolver that filters or blocks the name."
+                )
                 Meta(text: plural(result.results.count, "resolver"), help: "Resolvers queried concurrently with the same question.")
                 Dot()
-                Meta(text: plural(result.groups.filter { $0.key != "error" }.count, "distinct answer"), help: "Number of different answer sets seen. One means agreement.")
+                Meta(
+                    text: plural(result.groups.filter { $0.key != "error" }.count, "distinct answer"),
+                    help: "Number of different answer sets seen. One means agreement.")
                 if let failed = result.groups.first(where: { $0.key == "error" }) {
-                    Pill(text: "\(failed.members.count) failed", icon: "xmark.circle", color: .red, mono: true, help: "Resolvers that did not answer at all: timeout, refused connection or TLS failure. See the row for the reason.")
+                    Pill(
+                        text: "\(failed.members.count) failed", icon: "xmark.circle", color: .red, mono: true,
+                        help:
+                            "Resolvers that did not answer at all: timeout, refused connection or TLS failure. See the row for the reason.")
                 }
                 Spacer()
                 HStack(spacing: 6) {
@@ -44,9 +53,14 @@ struct CompareView: View {
                     let blockers = result.results.filter { CompareBlock.blocks($0, in: result) }.map(\.endpoint.title)
                     if !blockers.isEmpty {
                         // A filter, not a stale cache: purge pages would not help.
-                        Text(verbatim: "\(blockers.joined(separator: ", ")) \(blockers.count == 1 ? "blocks" : "block") this name, as ad and malware filters do. The other answers are what the name really resolves to.")
+                        Text(
+                            verbatim:
+                                "\(blockers.joined(separator: ", ")) \(blockers.count == 1 ? "blocks" : "block") this name, as ad and malware filters do. The other answers are what the name really resolves to."
+                        )
                     } else {
-                        Text("Answers differ. Usually a change still spreading, a CDN answering by location, or a resolver filtering the name. To clear an old copy:")
+                        Text(
+                            "Answers differ. Usually a change still spreading, a CDN answering by location, or a resolver filtering the name. To clear an old copy:"
+                        )
                         Link("Cloudflare", destination: URL(string: "https://one.one.one.one/purge-cache/")!)
                         Link("Google", destination: URL(string: "https://developers.google.com/speed/public-dns/cache")!)
                     }
@@ -89,7 +103,9 @@ struct CompareGrid: View {
         if result.consistent { return .green }
         // A blocked answer is the one to discount: grey, not a group hue.
         if g.members.contains(where: { CompareBlock.blocks(result.results[$0], in: result) }) { return .secondary }
-        let realIndex = result.groups[..<i].filter { grp in grp.key != "error" && !grp.members.contains(where: { CompareBlock.blocks(result.results[$0], in: result) }) }.count
+        let realIndex = result.groups[..<i].filter { grp in
+            grp.key != "error" && !grp.members.contains(where: { CompareBlock.blocks(result.results[$0], in: result) })
+        }.count
         return Self.groupColors[realIndex % Self.groupColors.count]
     }
 
@@ -103,7 +119,8 @@ struct CompareGrid: View {
                 Text("TTL").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Text("Cache").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 ForEach(cols, id: \.self) { c in
-                    Text(c).font(.system(.caption, design: .monospaced).weight(.semibold)).lineLimit(1).truncationMode(.middle).frame(maxWidth: 200)
+                    Text(c).font(.system(.caption, design: .monospaced).weight(.semibold)).lineLimit(1).truncationMode(.middle).frame(
+                        maxWidth: 200)
                 }
             }
             Divider().gridCellUnsizedAxes(.horizontal)
@@ -114,10 +131,14 @@ struct CompareGrid: View {
                     HStack(spacing: 8) {
                         RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 4, height: 18)
                         // The name opens this resolver's full answer.
-                        Button { model.compareDetail = i } label: {
+                        Button {
+                            model.compareDetail = i
+                        } label: {
                             HStack(spacing: 4) {
                                 Text(e.endpoint.title).lineLimit(1).fixedSize()
-                                if e.message != nil { Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary) }
+                                if e.message != nil {
+                                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                                }
                             }
                             .contentShape(Rectangle())
                         }
@@ -126,12 +147,27 @@ struct CompareGrid: View {
                         .help("Show everything this resolver returned")
                         // A shield, not a lock: a lock reads as an encrypted
                         // connection, which plain UDP is not.
-                        if e.message?.flags.ad == true { Image(systemName: "checkmark.shield").foregroundStyle(.secondary).help("The resolver says it validated this answer with DNSSEC (AD flag).") }
-                        if CompareBlock.blocks(e, in: result) { Pill(text: "blocks", color: .orange, help: "This resolver says it filters the name (Extended DNS Error), or answers with a null address while others resolve it: an ad or malware blocker.").fixedSize() }
+                        if e.message?.flags.ad == true {
+                            Image(systemName: "checkmark.shield").foregroundStyle(.secondary).help(
+                                "The resolver says it validated this answer with DNSSEC (AD flag).")
+                        }
+                        if CompareBlock.blocks(e, in: result) {
+                            Pill(
+                                text: "blocks", color: .orange,
+                                help:
+                                    "This resolver says it filters the name (Extended DNS Error), or answers with a null address while others resolve it: an ad or malware blocker."
+                            ).fixedSize()
+                        }
                     }
-                    if let m = e.message { RcodeBadge(rcode: m.rcode) } else { Pill(text: e.error?.code ?? "error", color: .red, mono: true) }
+                    if let m = e.message {
+                        RcodeBadge(rcode: m.rcode)
+                    } else {
+                        Pill(text: e.error?.code ?? "error", color: .red, mono: true)
+                    }
                     Text(e.exchange.map { ms($0.rttMs) } ?? "—").font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
-                    Text(verbatim: e.message?.answer.first(where: { $0.type != "RRSIG" }).map { String($0.ttl) } ?? "—").font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+                    Text(verbatim: e.message?.answer.first(where: { $0.type != "RRSIG" }).map { String($0.ttl) } ?? "—").font(
+                        .system(.callout, design: .monospaced)
+                    ).foregroundStyle(.secondary)
                     if let m = e.message, m.rcode == "NOERROR" {
                         HStack(spacing: 4) {
                             CacheAgePill(message: m, question: result.questionSent)
@@ -203,7 +239,8 @@ struct CompareDetailSheet: View {
             .padding(12)
             Divider()
             if let m = entry.message, let ex = entry.exchange {
-                QueryResultView(results: [QueryResult(questionSent: question, message: m, exchange: ex, dnssec: nil)], offersOtherResolvers: false)
+                QueryResultView(
+                    results: [QueryResult(questionSent: question, message: m, exchange: ex, dnssec: nil)], offersOtherResolvers: false)
             }
         }
         .frame(minWidth: 860, minHeight: 560)

@@ -12,7 +12,10 @@ struct DetailsView: View {
                     KV("Opcode", result.message.opcode)
                     KV("ID", "\(result.message.id)")
                     KV("Flags", result.message.flags.set.joined(separator: " "))
-                    KV("Sections", "answer \(result.message.answer.count), authority \(result.message.authority.count), additional \(result.message.additional.count)")
+                    KV(
+                        "Sections",
+                        "answer \(result.message.answer.count), authority \(result.message.authority.count), additional \(result.message.additional.count)"
+                    )
                     KV("Size", "\(result.message.sizeBytes) bytes")
                 }
                 if let e = result.message.edns {
@@ -54,7 +57,10 @@ struct ExchangeSection: View {
                 KV("HTTP", "\(h.version) \(h.status) \(h.contentType)")
             }
             if let t = exchange.tls {
-                KV("TLS", "\(t.version), \(t.cipherSuite), ALPN \(t.alpn.isEmpty ? "none" : t.alpn), handshake \(String(format: "%.1f", t.handshakeMs)) ms")
+                KV(
+                    "TLS",
+                    "\(t.version), \(t.cipherSuite), ALPN \(t.alpn.isEmpty ? "none" : t.alpn), handshake \(String(format: "%.1f", t.handshakeMs)) ms"
+                )
                 KV("Server name", t.serverName)
                 if let c = t.certificate {
                     KV("Certificate", c.subject)
@@ -71,7 +77,10 @@ struct ExchangeSection: View {
 struct Section2<Content: View>: View {
     var title: String
     @ViewBuilder var content: Content
-    init(_ title: String, @ViewBuilder content: () -> Content) { self.title = title; self.content = content() }
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.headline)
@@ -83,7 +92,10 @@ struct Section2<Content: View>: View {
 struct KV: View {
     var key: String
     var value: String
-    init(_ key: String, _ value: String) { self.key = key; self.value = value }
+    init(_ key: String, _ value: String) {
+        self.key = key
+        self.value = value
+    }
     var body: some View {
         GridRow {
             Text(key).foregroundStyle(.secondary).gridColumnAlignment(.trailing)

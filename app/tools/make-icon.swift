@@ -26,17 +26,19 @@ print("wrote \(assets)/logo.svg")
 let ink = NSColor(srgbRed: 0x14 / 255.0, green: 0x1c / 255.0, blue: 0x26 / 255.0, alpha: 1)
 
 func render(_ size: Int, rounded: Bool, to name: String) {
-    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8,
-                               samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-                               bytesPerRow: 0, bitsPerPixel: 0)!
+    let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+        bytesPerRow: 0, bitsPerPixel: 0)!
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     NSGraphicsContext.current!.imageInterpolation = .high
     let rect = NSRect(x: 0, y: 0, width: size, height: size)
     ink.setFill()
     // Apple's icon corner is about 22.5% of the side; iOS rounds touch icons itself.
-    (rounded ? NSBezierPath(roundedRect: rect, xRadius: CGFloat(size) * 0.225, yRadius: CGFloat(size) * 0.225)
-             : NSBezierPath(rect: rect)).fill()
+    (rounded
+        ? NSBezierPath(roundedRect: rect, xRadius: CGFloat(size) * 0.225, yRadius: CGFloat(size) * 0.225)
+        : NSBezierPath(rect: rect)).fill()
     logo.draw(in: rect)
     NSGraphicsContext.restoreGraphicsState()
     let out = args[3] + "/" + name

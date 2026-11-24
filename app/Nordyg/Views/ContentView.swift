@@ -36,7 +36,9 @@ struct ContentView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
-                Button { model.clearResult() } label: {
+                Button {
+                    model.clearResult()
+                } label: {
                     Label("Clear", systemImage: "xmark.circle")
                 }
                 .help("Clear this tab's result (⌘K)")
@@ -65,7 +67,9 @@ struct ModeSwitcher: View {
         HStack(spacing: 2) {
             ForEach(Array(Mode.allCases.enumerated()), id: \.element) { i, m in
                 let selected = m == mode
-                Button { mode = m } label: {
+                Button {
+                    mode = m
+                } label: {
                     Text(m.title)
                         .padding(.horizontal, 12).padding(.vertical, 4)
                         .foregroundStyle(selected ? Color.white : Color.primary)
@@ -164,21 +168,38 @@ struct RunErrorView: View {
         case "bad_request", "unknown_type":
             return ("Check what you typed", "character.cursor.ibeam", "Fix the name or type and press ⌘↩ again.")
         case "timeout":
-            return ("No answer in time", "clock.badge.exclamationmark", "The server did not reply before the timeout. Run again, raise the timeout in the options, or pick another resolver.")
+            return (
+                "No answer in time", "clock.badge.exclamationmark",
+                "The server did not reply before the timeout. Run again, raise the timeout in the options, or pick another resolver."
+            )
         case "network":
-            return ("Could not reach the server", "network.slash", "Check the connection, or whether a VPN or firewall blocks this resolver.")
+            return (
+                "Could not reach the server", "network.slash", "Check the connection, or whether a VPN or firewall blocks this resolver."
+            )
         case "tls":
-            return ("Secure connection failed", "lock.trianglebadge.exclamationmark", "The resolver's certificate did not check out. Check the TLS name of a custom resolver.")
+            return (
+                "Secure connection failed", "lock.trianglebadge.exclamationmark",
+                "The resolver's certificate did not check out. Check the TLS name of a custom resolver."
+            )
         case "http":
-            return ("The DoH server refused", "exclamationmark.icloud", "The DNS-over-HTTPS server answered with an HTTP error. Check the URL of a custom resolver.")
+            return (
+                "The DoH server refused", "exclamationmark.icloud",
+                "The DNS-over-HTTPS server answered with an HTTP error. Check the URL of a custom resolver."
+            )
         case "resolver_unreachable":
-            return ("The resolver does not answer", "server.rack", "Pick another resolver in the menu next to the name, or check the network, a VPN or a firewall. A custom resolver may have a wrong address.")
+            return (
+                "The resolver does not answer", "server.rack",
+                "Pick another resolver in the menu next to the name, or check the network, a VPN or a firewall. A custom resolver may have a wrong address."
+            )
         case "bad_endpoint", "bootstrap_required", "bootstrap_failed":
             return ("The resolver is not usable", "server.rack", "Check the resolver's address, or pick another one.")
         case "malformed_response":
             return ("The answer did not parse", "doc.badge.ellipsis", "The server sent something that is not a valid DNS message.")
         case "trace_dead_end":
-            return ("The trace hit a dead end", "point.topleft.down.to.point.bottomright.curvepath", "A server on the way down did not answer or did not know the zone. Zone check shows which.")
+            return (
+                "The trace hit a dead end", "point.topleft.down.to.point.bottomright.curvepath",
+                "A server on the way down did not answer or did not know the zone. Zone check shows which."
+            )
         default:
             return ("The run failed", "exclamationmark.triangle", nil)
         }
@@ -239,7 +260,9 @@ struct Placeholder: View {
                 Text(mode.prompt).font(.callout).foregroundStyle(.tertiary).padding(.top, 6)
                 FlowLayout(spacing: 8) {
                     ForEach(mode.examples, id: \.self) { e in
-                        Button { model.runExample(e) } label: {
+                        Button {
+                            model.runExample(e)
+                        } label: {
                             HStack(spacing: 6) {
                                 Text(e.name).font(.system(.callout, design: .monospaced))
                                 if let t = e.type, t != "A" { Text(t).font(.caption.weight(.bold)).foregroundStyle(TypeStyle.ink(t)) }
@@ -284,7 +307,11 @@ struct FlowLayout: Layout {
         }
     }
 
-    private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+    private struct Row {
+        var indices: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
 
     private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
         var rows: [Row] = [Row()]

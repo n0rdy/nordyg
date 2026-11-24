@@ -52,11 +52,17 @@ struct SystemViewPill: View {
                 Meta(text: "your Mac sees the same", help: Glossary.systemView(system, overlap: true))
             } else {
                 // Say which resolver the Mac asked, and open the full picture on click.
-                let asked = model.macDNS.plan.resolver(for: name).flatMap { $0.resolver.nameservers.first.map { model.macDNS.plan.describe($0) } }
-                Button { model.showMacResolvers = true } label: {
-                    Pill(text: (system.isEmpty ? "your Mac gets no answer" : "your Mac sees something else") + (asked.map { ", it asks \($0)" } ?? ""),
-                         icon: "desktopcomputer", color: .orange,
-                         help: Glossary.systemView(system, overlap: false) + "\nClick to see how this Mac resolves names.")
+                let asked = model.macDNS.plan.resolver(for: name).flatMap {
+                    $0.resolver.nameservers.first.map { model.macDNS.plan.describe($0) }
+                }
+                Button {
+                    model.showMacResolvers = true
+                } label: {
+                    Pill(
+                        text: (system.isEmpty ? "your Mac gets no answer" : "your Mac sees something else")
+                            + (asked.map { ", it asks \($0)" } ?? ""),
+                        icon: "desktopcomputer", color: .orange,
+                        help: Glossary.systemView(system, overlap: false) + "\nClick to see how this Mac resolves names.")
                 }
                 .buttonStyle(.plain)
             }

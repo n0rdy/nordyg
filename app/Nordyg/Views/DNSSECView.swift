@@ -46,7 +46,9 @@ struct DNSSECView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
-            ContentUnavailableView("Validation was off", systemImage: "lock.slash", description: Text("Turn on “Validate DNSSEC” and run again to see the chain of trust."))
+            ContentUnavailableView(
+                "Validation was off", systemImage: "lock.slash",
+                description: Text("Turn on “Validate DNSSEC” and run again to see the chain of trust."))
         }
     }
 }
@@ -132,7 +134,8 @@ struct ChainNode: View {
                     Circle().stroke(color, lineWidth: isSelected ? 3 : 1.5).frame(width: 46, height: 46)
                     Image(systemName: DNSSECStyle.icon(link.status)).foregroundStyle(color).font(.system(size: 18))
                 }
-                Text(link.zone == "." ? "root" : prose(link.zone)).font(.system(.callout, design: .monospaced).weight(.semibold)).lineLimit(1)
+                Text(link.zone == "." ? "root" : prose(link.zone)).font(.system(.callout, design: .monospaced).weight(.semibold)).lineLimit(
+                    1)
                 Text(DNSSECWording.label(link.status)).font(.caption).foregroundStyle(.secondary)
             }
             .frame(minWidth: 90)
@@ -171,9 +174,12 @@ struct LinkCard: View {
                 Text("DS from the parent").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 ForEach(Array(link.ds.enumerated()), id: \.offset) { _, d in
                     HStack(spacing: 8) {
-                        Image(systemName: d.matchesDnskey ? "checkmark.circle.fill" : "xmark.circle.fill").foregroundStyle(d.matchesDnskey ? Color.green : Color.red)
-                        Text(verbatim: "tag \(d.keyTag) · alg \(d.algorithm) · digest \(d.digestType)").font(.system(.callout, design: .monospaced))
-                        Text(d.matchesDnskey ? "matches a key" : "matches nothing").font(.callout).foregroundStyle(d.matchesDnskey ? Color.secondary : Color.red)
+                        Image(systemName: d.matchesDnskey ? "checkmark.circle.fill" : "xmark.circle.fill").foregroundStyle(
+                            d.matchesDnskey ? Color.green : Color.red)
+                        Text(verbatim: "tag \(d.keyTag) · alg \(d.algorithm) · digest \(d.digestType)").font(
+                            .system(.callout, design: .monospaced))
+                        Text(d.matchesDnskey ? "matches a key" : "matches nothing").font(.callout).foregroundStyle(
+                            d.matchesDnskey ? Color.secondary : Color.red)
                     }
                 }
             }

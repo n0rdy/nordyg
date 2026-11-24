@@ -62,7 +62,8 @@ enum DebugHooks {
     }
 
     private static var window: NSWindow? {
-        NSApp.windows.first { $0.isVisible && $0.className.contains("AppKitWindow") } ?? NSApp.windows.first { $0.isVisible && $0.frame.width > 600 }
+        NSApp.windows.first { $0.isVisible && $0.className.contains("AppKitWindow") }
+            ?? NSApp.windows.first { $0.isVisible && $0.frame.width > 600 }
     }
 
     private static func handle(_ cmd: String, _ model: AppModel) {
@@ -70,8 +71,13 @@ enum DebugHooks {
         let arg = parts.count > 1 ? parts[1] : ""
         switch parts.first {
         case "mode":
-            if arg == "compare" { model.mode = .query; model.severalResolvers = true }
-            else if let m = Mode(rawValue: arg) { model.mode = m; if m == .query { model.severalResolvers = false } }
+            if arg == "compare" {
+                model.mode = .query
+                model.severalResolvers = true
+            } else if let m = Mode(rawValue: arg) {
+                model.mode = m
+                if m == .query { model.severalResolvers = false }
+            }
         case "several": model.severalResolvers = arg != "off"
         case "example":
             if let i = Int(arg), model.mode.examples.indices.contains(i) { model.runExample(model.mode.examples[i]) }
@@ -85,9 +91,13 @@ enum DebugHooks {
         case "preset":
             // "preset nextdns" opens its sheet; "preset nextdns abc123" sets the value.
             let parts = arg.split(separator: " ").map(String.init)
-            if parts.count == 2 { model.configurePreset(parts[0], values: ["profile_id": parts[1]]) }
-            else if parts.count == 1 { model.setupPreset = parts[0] }
-            else { model.setupPreset = nil }
+            if parts.count == 2 {
+                model.configurePreset(parts[0], values: ["profile_id": parts[1]])
+            } else if parts.count == 1 {
+                model.setupPreset = parts[0]
+            } else {
+                model.setupPreset = nil
+            }
         case "unpreset": model.clearPreset(arg)
         case "macdns": model.showMacResolvers = arg != "off"
         case "dumpdns":
@@ -96,7 +106,8 @@ enum DebugHooks {
                 "\(r.scoped ? "scoped" : "resolver") domain=\(r.domain ?? "-") ns=\(r.nameservers) port=\(r.port) if=\(r.interface ?? "-") order=\(r.order) flags=0x\(String(r.flags, radix: 16)) options=\(r.options ?? "-") search=\(r.searchDomains)"
             }
             let text = DNSConfiguration.current() == nil ? "UNAVAILABLE" : lines.joined(separator: "\n")
-            try? text.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("nordyg-dns.txt"), atomically: true, encoding: .utf8)
+            try? text.write(
+                to: FileManager.default.temporaryDirectory.appendingPathComponent("nordyg-dns.txt"), atomically: true, encoding: .utf8)
         case "checklist": model.showResolverChecklist = arg != "off"
         case "drill": model.compareDetail = Int(arg)
         case "name": model.name = arg
@@ -118,7 +129,9 @@ enum DebugHooks {
                     let ep = Endpoint(transport: "udp", address: "192.0.2.1:53", label: "Unreachable test")
                     if !model.customEndpoints.contains(ep) { model.customEndpoints.append(ep) }
                     set.insert(ep)
-                } else if let ep = model.allEndpoints.first(where: { $0.title.lowercased().contains(term) || $0.summary.lowercased().contains(term) }) {
+                } else if let ep = model.allEndpoints.first(where: {
+                    $0.title.lowercased().contains(term) || $0.summary.lowercased().contains(term)
+                }) {
                     set.insert(ep)
                 }
             }
@@ -130,7 +143,9 @@ enum DebugHooks {
         case "export":
             Task { @MainActor in
                 let out = await model.exportCommand(arg) ?? "(nil)"
-                try? out.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("nordyg-export.txt"), atomically: true, encoding: .utf8)
+                try? out.write(
+                    to: FileManager.default.temporaryDirectory.appendingPathComponent("nordyg-export.txt"), atomically: true,
+                    encoding: .utf8)
             }
         case "size":
             let wh = arg.split(separator: " ").compactMap { Double($0) }
@@ -170,7 +185,8 @@ enum DebugHooks {
         }
         // Fallback: AppKit's own drawing, which renders glass as blank.
         guard let view = window?.contentView?.superview ?? window?.contentView,
-              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+            let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+        else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: url)
     }
@@ -179,7 +195,8 @@ enum DebugHooks {
 
     private static func windowImage(_ number: Int) -> CGImage? {
         guard let handle = dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_NOW),
-              let sym = dlsym(handle, "CGWindowListCreateImage") else { return nil }
+            let sym = dlsym(handle, "CGWindowListCreateImage")
+        else { return nil }
         let create = unsafeBitCast(sym, to: CreateImage.self)
         // kCGWindowListOptionIncludingWindow = 1 << 3; boundsIgnoreFraming = 1, bestResolution = 1 << 3
         return create(.null, 1 << 3, UInt32(number), 1 | (1 << 3))?.takeRetainedValue()

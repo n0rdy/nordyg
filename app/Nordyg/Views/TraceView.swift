@@ -137,8 +137,16 @@ struct HopRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     Text(hop.zone == "." ? "root" : prose(hop.zone)).font(.system(.title3, design: .monospaced).weight(.semibold))
-                    if hop.message.flags.aa { Pill(text: "authoritative", icon: "checkmark.seal.fill", color: .green, help: "AA flag set: this server is authoritative for the zone and answered from its own data, not a cache.") }
-                    if hop.referral != nil { Pill(text: "referral", icon: "arrow.turn.down.right", color: .accentColor, help: "This server does not hold the answer. It pointed to the nameservers of the next zone down.") }
+                    if hop.message.flags.aa {
+                        Pill(
+                            text: "authoritative", icon: "checkmark.seal.fill", color: .green,
+                            help: "AA flag set: this server is authoritative for the zone and answered from its own data, not a cache.")
+                    }
+                    if hop.referral != nil {
+                        Pill(
+                            text: "referral", icon: "arrow.turn.down.right", color: .accentColor,
+                            help: "This server does not hold the answer. It pointed to the nameservers of the next zone down.")
+                    }
                     if hop.referral == nil && hop.message.rcode != "NOERROR" { RcodeBadge(rcode: hop.message.rcode) }
                     Spacer()
                 }
@@ -155,20 +163,30 @@ struct HopRow: View {
                         }
                     }
                     .frame(height: 8)
-                    Text(ms(hop.exchange.rttMs)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
+                    Text(ms(hop.exchange.rttMs)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).frame(
+                        width: 60, alignment: .trailing)
                 }
 
                 if let ref = hop.referral {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
-                            Image(systemName: ref.ds.isEmpty ? "lock.open" : "lock.fill").foregroundStyle(ref.ds.isEmpty ? Color.secondary : Color.yellow)
-                            Text(verbatim: ref.ds.isEmpty ? "hands off \(prose(ref.zone)) without a DS record (unsigned below here)" : "hands off \(prose(ref.zone)) with \(plural(ref.ds.count, "DS record"))")
-                                .font(.callout)
+                            Image(systemName: ref.ds.isEmpty ? "lock.open" : "lock.fill").foregroundStyle(
+                                ref.ds.isEmpty ? Color.secondary : Color.yellow)
+                            Text(
+                                verbatim: ref.ds.isEmpty
+                                    ? "hands off \(prose(ref.zone)) without a DS record (unsigned below here)"
+                                    : "hands off \(prose(ref.zone)) with \(plural(ref.ds.count, "DS record"))"
+                            )
+                            .font(.callout)
                         }
                         Text(ref.nameservers.joined(separator: "  ")).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
                         if !ref.glue.isEmpty {
-                            Text("glue: " + ref.glue.keys.sorted().map { "\($0) → \(ref.glue[$0]!.joined(separator: ", "))" }.joined(separator: "   "))
-                                .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2)
+                            Text(
+                                "glue: "
+                                    + ref.glue.keys.sorted().map { "\($0) → \(ref.glue[$0]!.joined(separator: ", "))" }.joined(
+                                        separator: "   ")
+                            )
+                            .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2)
                         }
                     }
                     .inset()
