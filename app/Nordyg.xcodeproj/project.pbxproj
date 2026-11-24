@@ -17,6 +17,8 @@
 		769F5477EC6A291C9C3CC96D /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 85317044D794DF2935CD0676 /* AppIcon.icon */; };
 		7C0DB29306F69C760B4423BA /* DebugHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0A0D4775074AF21D496759E /* DebugHooks.swift */; };
 		820894E762F1EED80DB70068 /* RecordDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B77C6D5F2806DF13D416182 /* RecordDetail.swift */; };
+		8A35A9D5BB81C227F717008F /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 72D819371740963D4CD27B8B /* Sparkle */; };
+		8A3C4767FA5785B4A168DADE /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B1F2354568E059E77BE6DCB /* Updater.swift */; };
 		8C69467B616CDABBE6E4D918 /* QueryResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CF6A7A69A355276A1A4D3E /* QueryResultView.swift */; };
 		8FB0F92E86AE9E6B3022AF9D /* HealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02595255FBAF8DC15A192FD4 /* HealthView.swift */; };
 		97F294C961493B18A4AF1B0E /* CoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA298458E1FC218F3D43D8F9 /* CoreBridge.swift */; };
@@ -49,6 +51,7 @@
 		04E9BE2BF54273089464150C /* DetailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailsView.swift; sourceTree = "<group>"; };
 		06FA671494916709A42DAF73 /* WatchCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCenter.swift; sourceTree = "<group>"; };
 		08A4CD629480DD0D02DC72AD /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
+		0B1F2354568E059E77BE6DCB /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
 		0C35D0A5583336D66422EB05 /* Style.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Style.swift; sourceTree = "<group>"; };
 		0F543A15E0D412ED6A81EC90 /* NordygApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NordygApp.swift; sourceTree = "<group>"; };
 		0F9A107B146C8BA52FD9D231 /* SystemLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemLookup.swift; sourceTree = "<group>"; };
@@ -86,6 +89,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8A35A9D5BB81C227F717008F /* Sparkle in Frameworks */,
 				1968B06CB86F5BDFBC2CECE3 /* CoreFoundation.framework in Frameworks */,
 				FC60604C32A6B273979F566F /* Security.framework in Frameworks */,
 				A39E96BE7FDBE0B9F7C3F002 /* SystemConfiguration.framework in Frameworks */,
@@ -187,6 +191,7 @@
 				2F3EF3B2BD66623456A4D7ED /* Info.plist */,
 				73D887D92E6DD0BA362E5276 /* Nordyg.entitlements */,
 				0F543A15E0D412ED6A81EC90 /* NordygApp.swift */,
+				0B1F2354568E059E77BE6DCB /* Updater.swift */,
 				5996491A9C355A92FE53A039 /* Core */,
 				0D2137364C07761E25B29394 /* Model */,
 				8D737FABF73131FA8C1BF3B5 /* Views */,
@@ -211,6 +216,7 @@
 			);
 			name = Nordyg;
 			packageProductDependencies = (
+				72D819371740963D4CD27B8B /* Sparkle */,
 			);
 			productName = Nordyg;
 			productReference = 00A5EB06BE3509FD063C2508 /* Nordyg.app */;
@@ -239,6 +245,9 @@
 			);
 			mainGroup = 54D0439D27AF6627CEB37FDF;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				438694135ACF0E44AD707C59 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 00F8E23566A736AE6B575F08 /* Products */;
 			projectDirPath = "";
@@ -291,6 +300,7 @@
 				B6B93EE85E9B297A2BC65A87 /* SystemLookup.swift in Sources */,
 				F49E1B2B1C820BEA7904E28E /* SystemResolvers.swift in Sources */,
 				3C83A913246980103EF0641D /* TraceView.swift in Sources */,
+				8A3C4767FA5785B4A168DADE /* Updater.swift in Sources */,
 				AA2CD3C6424EF46CD673FB62 /* WatchCenter.swift in Sources */,
 				E0083259941AB5A76373DACE /* WatchView.swift in Sources */,
 			);
@@ -307,6 +317,7 @@
 				CODE_SIGN_ENTITLEMENTS = Nordyg/Nordyg.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Nordyg/Info.plist;
@@ -315,6 +326,7 @@
 					"@executable_path/../Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../core/build";
+				MARKETING_VERSION = 0.0.1;
 				OTHER_LDFLAGS = (
 					"-lnordyg",
 					"-lresolv",
@@ -322,6 +334,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = foo.n0rdy.nordyg;
 				PRODUCT_NAME = Nordyg;
 				SDKROOT = macosx;
+				SPARKLE_PUBLIC_ED_KEY = "B8wxeWuiyPknwlj4vBAy0Hq0mT19Ry8tTEJVpaQqZwI=";
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/NordygCore";
 			};
 			name = Debug;
@@ -455,6 +468,7 @@
 				CODE_SIGN_ENTITLEMENTS = Nordyg/Nordyg.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Nordyg/Info.plist;
@@ -463,6 +477,7 @@
 					"@executable_path/../Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../core/build";
+				MARKETING_VERSION = 0.0.1;
 				OTHER_LDFLAGS = (
 					"-lnordyg",
 					"-lresolv",
@@ -470,6 +485,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = foo.n0rdy.nordyg;
 				PRODUCT_NAME = Nordyg;
 				SDKROOT = macosx;
+				SPARKLE_PUBLIC_ED_KEY = "B8wxeWuiyPknwlj4vBAy0Hq0mT19Ry8tTEJVpaQqZwI=";
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/NordygCore";
 			};
 			name = Release;
@@ -496,6 +512,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		438694135ACF0E44AD707C59 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.10.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		72D819371740963D4CD27B8B /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 438694135ACF0E44AD707C59 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = C8270AC2371991D76B25CA76 /* Project object */;
 }

@@ -163,7 +163,7 @@ struct HistoryRow: View {
                 .lineLimit(1).truncationMode(.middle)
                 .layoutPriority(1)
             if let t = recordType {
-                Text(t).font(.caption.weight(.semibold)).foregroundStyle(TypeStyle.color(t)).fixedSize()
+                Text(t).font(.caption.weight(.semibold)).foregroundStyle(TypeStyle.ink(t)).fixedSize()
             }
             if withNote, let r = resolverNote {
                 Text(r).font(.caption).foregroundStyle(.tertiary).fixedSize()

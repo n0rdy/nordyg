@@ -244,7 +244,7 @@ struct Placeholder: View {
                         Button { model.runExample(e) } label: {
                             HStack(spacing: 6) {
                                 Text(e.name).font(.system(.callout, design: .monospaced))
-                                if let t = e.type, t != "A" { Text(t).font(.caption.weight(.bold)).foregroundStyle(TypeStyle.color(t)) }
+                                if let t = e.type, t != "A" { Text(t).font(.caption.weight(.bold)).foregroundStyle(TypeStyle.ink(t)) }
                                 if let n = e.note { Text(n).font(.caption).foregroundStyle(.secondary) }
                             }
                             .padding(.horizontal, 10).padding(.vertical, 5)

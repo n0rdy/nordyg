@@ -29,6 +29,7 @@ import SwiftUI
 ///     tab <name>           result tab of the current mode (records, details,
 ///                          dnssec, raw; hops, final for Trace)
 ///     rerun <index>        re-run a history entry, as clicking it does
+///     appearance <light|dark|system>  force the app's appearance (screenshots)
 ///     cards <open|auto|title>  open every report card's details on the next
 ///                          run, or only the card with that title
 ///     snapshot             write <container tmp>/nordyg-snapshot.png once idle
@@ -112,6 +113,8 @@ enum DebugHooks {
                 }
             }
             model.compareSelection = set
+        case "appearance":
+            NSApp.appearance = arg == "light" ? NSAppearance(named: .aqua) : arg == "dark" ? NSAppearance(named: .darkAqua) : nil
         case "rerun": if let i = Int(arg), model.history.indices.contains(i) { model.rerun(model.history[i]) }
         case "cards": openCards = arg == "auto" ? nil : arg
         case "export":

@@ -1,17 +1,17 @@
 # Contributing
 
-## No pull requests accepted
+## No Pull Requests Accepted
 
 This repository **does not accept pull requests**.
 
-Nordyg is a personal project. It is open source under the AGPL-3.0 so that you can read the code, build it yourself and fork it, but I don't have the time to review external contributions or to coordinate with other maintainers.
+Nordyg is a personal tool built primarily for my own use. While it's open source for others to use and fork, I don't have the time to review external contributions or coordinate with other maintainers.
 
-Like SQLite and jOOQ, I prefer to keep sole ownership and control over the codebase and its direction.
+Similar to projects like SQLite and jooq, I prefer to maintain sole ownership and control over the codebase direction.
 
 ## Alternatives
 
-- **Fork the repository.** You are welcome to make your own version.
-- **Use Discussions** for questions, bug reports and suggestions. I read them, but there is no guarantee of a fix.
-- **Buy it on the Mac App Store** if you want to support the work. That is the same app as the one you can build here.
+- **Fork the repository** - You're welcome to create your own version
+- **Use Discussions** for questions or bug reports (no guarantee of fixes)
+- **Use as-is** - The tool works for my needs and may work for yours
 
 Thanks for understanding.

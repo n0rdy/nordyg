@@ -47,5 +47,6 @@ func render(_ size: Int, rounded: Bool, to name: String) {
 render(64, rounded: true, to: "favicon.png")
 render(64, rounded: true, to: "logo-64.png")
 render(96, rounded: true, to: "logo-96.png")
+render(192, rounded: true, to: "logo-192.png")
 render(930, rounded: true, to: "logo.png")
 render(180, rounded: false, to: "apple-touch-icon.png")

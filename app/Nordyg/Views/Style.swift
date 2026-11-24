@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Semantic colour for record types, the way database tools colour column
@@ -20,6 +21,44 @@ enum TypeStyle {
         default: return .secondary
         }
     }
+
+    /// The type's colour for text. Several system colours (yellow, orange,
+    /// mint, cyan) are too bright to read on a light background, so in light
+    /// mode the colour is darkened step by step until it reaches 4.5:1 against
+    /// its own badge (a 16% tint over the window). Dark mode keeps it as is.
+    static func ink(_ type: String) -> Color {
+        let tint = color(type)
+        guard tint != .secondary else { return .secondary }
+        let base = NSColor(tint)
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            guard appearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua else { return base }
+            var light = base
+            appearance.performAsCurrentDrawingAppearance {
+                light = base.usingColorSpace(.sRGB) ?? base
+            }
+            let badge = NSColor.white.blended(withFraction: 0.16, of: light) ?? .white
+            var ink = light
+            for step in stride(from: 0.0, through: 0.85, by: 0.05) {
+                ink = light.blended(withFraction: step, of: .black) ?? light
+                if contrast(ink, badge) >= 4.5 { break }
+            }
+            return ink
+        })
+    }
+
+    /// WCAG contrast ratio of two sRGB colours.
+    private static func contrast(_ a: NSColor, _ b: NSColor) -> Double {
+        func lum(_ c: NSColor) -> Double {
+            guard let c = c.usingColorSpace(.sRGB) else { return 0 }
+            func lin(_ v: CGFloat) -> Double {
+                let v = Double(v)
+                return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * lin(c.redComponent) + 0.7152 * lin(c.greenComponent) + 0.0722 * lin(c.blueComponent)
+        }
+        let (x, y) = (lum(a), lum(b))
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+    }
 }
 
 struct TypeBadge: View {
@@ -28,7 +67,7 @@ struct TypeBadge: View {
         Text(type)
             .help(Glossary.recordType(type))
             .font(.system(.caption, design: .monospaced).weight(.bold))
-            .foregroundStyle(TypeStyle.color(type))
+            .foregroundStyle(TypeStyle.ink(type))
             .padding(.horizontal, 6).padding(.vertical, 2)
             .frame(minWidth: 44)
             .background(TypeStyle.color(type).opacity(0.16))

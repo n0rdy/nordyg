@@ -27,7 +27,7 @@ struct QueryBar: View {
                             }
                             .pickerStyle(.inline)
                         } label: {
-                            Text(model.type).font(.system(.callout, design: .monospaced).weight(.bold)).foregroundStyle(TypeStyle.color(model.type))
+                            Text(model.type).font(.system(.callout, design: .monospaced).weight(.bold)).foregroundStyle(TypeStyle.ink(model.type))
                         }
                     }
                     if model.mode == .query && model.severalResolvers {

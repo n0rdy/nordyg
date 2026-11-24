@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct NordygApp: App {
     @StateObject private var model = AppModel()
+    @StateObject private var updater = Updater()
 
     var body: some Scene {
         WindowGroup("Nordyg") {
@@ -27,9 +28,11 @@ struct NordygApp: App {
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About Nordyg") { AboutPanel.show() }
+                if updater.isAvailable {
+                    Button("Check for Updates…") { updater.check() }.disabled(!updater.canCheck)
+                }
             }
             CommandGroup(replacing: .help) {
-                Button("Docs") { NSWorkspace.shared.open(Links.docs) }
                 Button("Ask a question or report a bug") { NSWorkspace.shared.open(Links.discussions) }
                 Divider()
                 Button("Source code") { NSWorkspace.shared.open(Links.source) }

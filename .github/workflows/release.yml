@@ -1,0 +1,359 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# One universal app (x86_64 and arm64 in one binary), Developer ID signed and
+# notarized, in one DMG that the website, the Homebrew cask and Sparkle all
+# use. The release notes are the annotated tag's message:
+#
+#   git tag -a v0.0.2 -m "What changed, a few lines"   then   git push origin v0.0.2
+#
+# Secrets live in the "release" environment, which only tags matching v* can
+# use: DEVELOPER_ID_P12 (base64 of the exported certificate),
+# DEVELOPER_ID_P12_PASSWORD, NOTARY_KEY (base64 of the App Store Connect API
+# key .p8), NOTARY_KEY_ID, NOTARY_ISSUER_ID, SPARKLE_PRIVATE_KEY
+# (generate_keys -x) and PUBLISHER_TOKEN (push access to n0rdy/homebrew-n0rdy).
+
+jobs:
+  build:
+    runs-on: macos-26
+    environment: release
+    # id-token mints the short-lived signing identity, attestations stores the result
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      with:
+        go-version: "1.27.4"
+        cache-dependency-path: core/go.sum
+
+    - name: Version from the tag
+      id: version
+      env:
+        TAG: ${{ github.ref_name }}
+        BUILD: ${{ github.run_number }}
+      run: |
+        if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::tag $TAG is not vMAJOR.MINOR.PATCH"; exit 1
+        fi
+        echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+        # Sparkle compares build numbers, so they must only grow: the run number does.
+        echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+        xcodebuild -version
+
+    # Notes go through a file, not GITHUB_OUTPUT: they are multi-line text.
+    - name: Release notes from the tag message
+      env:
+        TAG: ${{ github.ref_name }}
+      run: |
+        git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+        if [ "$(git cat-file -t "$TAG")" != tag ]; then
+          echo "::error::$TAG is a lightweight tag. Tag with a message: git tag -a $TAG -m '...'"; exit 1
+        fi
+        mkdir -p dist
+        git for-each-ref --format='%(contents:subject)%0a%0a%(contents:body)' "refs/tags/$TAG" > "$RUNNER_TEMP/notes.txt"
+        cat "$RUNNER_TEMP/notes.txt"
+
+    - name: Go tests
+      run: make test
+
+    - name: Universal core archive
+      run: make archive
+
+    - name: Swift bridge smoke test
+      run: make smoke
+
+    - name: Signing keychain
+      id: keychain
+      env:
+        P12: ${{ secrets.DEVELOPER_ID_P12 }}
+        P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+      run: |
+        KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
+        KC_PASS=$(openssl rand -hex 24)
+        security create-keychain -p "$KC_PASS" "$KEYCHAIN"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN"
+        security unlock-keychain -p "$KC_PASS" "$KEYCHAIN"
+        printf '%s' "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+        security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+        rm -f "$RUNNER_TEMP/cert.p12"
+        security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PASS" "$KEYCHAIN" > /dev/null
+        security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+        security find-identity -v -p codesigning "$KEYCHAIN" | grep -q "Developer ID Application" \
+          || { echo "::error::no Developer ID Application identity in DEVELOPER_ID_P12"; exit 1; }
+        echo "path=$KEYCHAIN" >> "$GITHUB_OUTPUT"
+
+    - name: Archive and export the app
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        BUILD: ${{ steps.version.outputs.build }}
+        KEYCHAIN: ${{ steps.keychain.outputs.path }}
+      run: |
+        xcodebuild -project app/Nordyg.xcodeproj -scheme Nordyg -configuration Release \
+          -destination 'generic/platform=macOS' \
+          -archivePath "$RUNNER_TEMP/Nordyg.xcarchive" \
+          -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
+          MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
+          DEVELOPMENT_TEAM=8MT469FMBQ CODE_SIGN_STYLE=Manual \
+          CODE_SIGN_IDENTITY="Developer ID Application" \
+          OTHER_CODE_SIGN_FLAGS="--timestamp --keychain $KEYCHAIN" \
+          archive
+        cat > "$RUNNER_TEMP/export.plist" <<'EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>method</key><string>developer-id</string>
+          <key>teamID</key><string>8MT469FMBQ</string>
+          <key>signingStyle</key><string>manual</string>
+          <key>signingCertificate</key><string>Developer ID Application</string>
+        </dict>
+        </plist>
+        EOF
+        xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Nordyg.xcarchive" \
+          -exportPath "$RUNNER_TEMP/export" -exportOptionsPlist "$RUNNER_TEMP/export.plist"
+
+    - name: Check the app
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        APP="$RUNNER_TEMP/export/Nordyg.app"
+        codesign --verify --deep --strict --verbose=2 "$APP"
+        archs=$(lipo -archs "$APP/Contents/MacOS/Nordyg")
+        [[ "$archs" == *x86_64* && "$archs" == *arm64* ]] || { echo "::error::not universal: $archs"; exit 1; }
+        plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$APP/Contents/Info.plist"; }
+        [ "$(plist CFBundleShortVersionString)" = "$VERSION" ] || { echo "::error::version mismatch"; exit 1; }
+        [ -n "$(plist SUPublicEDKey)" ] || { echo "::error::SPARKLE_PUBLIC_ED_KEY is empty in project.yml"; exit 1; }
+
+    - name: DMG
+      id: dmg
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        KEYCHAIN: ${{ steps.keychain.outputs.path }}
+      run: |
+        STAGE="$RUNNER_TEMP/dmg"
+        mkdir -p "$STAGE"
+        cp -R "$RUNNER_TEMP/export/Nordyg.app" "$STAGE/"
+        ln -s /Applications "$STAGE/Applications"
+        DMG="dist/Nordyg-$VERSION.dmg"
+        hdiutil create -volname Nordyg -srcfolder "$STAGE" -format UDZO -ov "$DMG"
+        codesign --sign "Developer ID Application" --timestamp --keychain "$KEYCHAIN" "$DMG"
+        echo "path=$DMG" >> "$GITHUB_OUTPUT"
+
+    - name: Notarize and staple
+      env:
+        DMG: ${{ steps.dmg.outputs.path }}
+        NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+        NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+        NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+      run: |
+        KEY="$RUNNER_TEMP/notary.p8"
+        printf '%s' "$NOTARY_KEY" | base64 --decode > "$KEY"
+        auth=(--key "$KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+        out=$(xcrun notarytool submit "$DMG" "${auth[@]}" --wait --output-format json)
+        echo "$out"
+        status=$(printf '%s' "$out" | plutil -extract status raw -o - -)
+        if [ "$status" != Accepted ]; then
+          id=$(printf '%s' "$out" | plutil -extract id raw -o - -)
+          xcrun notarytool log "$id" "${auth[@]}"
+          echo "::error::notarization: $status"; exit 1
+        fi
+        rm -f "$KEY"
+        xcrun stapler staple "$DMG"
+        xcrun stapler validate "$DMG"
+        spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+
+    - name: Checksum
+      env:
+        DMG: ${{ steps.dmg.outputs.path }}
+      run: |
+        cd dist && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" && cat ./*.sha256
+
+    # signed statement that this exact DMG was built by this workflow from this
+    # commit; verify with `gh attestation verify <file> --repo n0rdy/nordyg`
+    - name: Attest DMG
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: ${{ steps.dmg.outputs.path }}
+
+    - name: Sparkle appcast
+      env:
+        DMG: ${{ steps.dmg.outputs.path }}
+        TAG: ${{ github.ref_name }}
+        VERSION: ${{ steps.version.outputs.version }}
+        BUILD: ${{ steps.version.outputs.build }}
+        SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      run: |
+        KEY="$RUNNER_TEMP/sparkle.key"
+        printf '%s' "$SPARKLE_PRIVATE_KEY" > "$KEY"
+        # sign_update comes with the Sparkle package Xcode resolved and checked
+        SIG=$("$RUNNER_TEMP/spm/artifacts/sparkle/Sparkle/bin/sign_update" --ed-key-file "$KEY" -p "$DMG")
+        rm -f "$KEY"
+        export SIG LENGTH=$(stat -f %z "$DMG") NOTES="$RUNNER_TEMP/notes.txt"
+        python3 - <<'EOF'
+        import html, os
+        from email.utils import formatdate
+        e = os.environ
+        lines = open(e["NOTES"]).read().strip().splitlines()
+        # The tag message as simple HTML: "- " lines become a list, the rest paragraphs.
+        out, items = [], []
+        for line in lines + [""]:
+            if line.startswith("- "):
+                items.append("<li>%s</li>" % html.escape(line[2:]))
+                continue
+            if items:
+                out.append("<ul>%s</ul>" % "".join(items)); items = []
+            if line.strip():
+                out.append("<p>%s</p>" % html.escape(line))
+        url = "https://github.com/n0rdy/nordyg/releases/download/%s/Nordyg-%s.dmg" % (e["TAG"], e["VERSION"])
+        open("dist/appcast.xml", "w").write(f"""<?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+          <channel>
+            <title>Nordyg</title>
+            <link>https://nordyg.com/</link>
+            <item>
+              <title>Nordyg {e["VERSION"]}</title>
+              <pubDate>{formatdate(usegmt=True)}</pubDate>
+              <sparkle:version>{e["BUILD"]}</sparkle:version>
+              <sparkle:shortVersionString>{e["VERSION"]}</sparkle:shortVersionString>
+              <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+              <description><![CDATA[{"".join(out)}]]></description>
+              <enclosure url="{url}" length="{e["LENGTH"]}" type="application/octet-stream" sparkle:edSignature="{e["SIG"]}"/>
+            </item>
+          </channel>
+        </rss>
+        """)
+        EOF
+        cat dist/appcast.xml
+
+    - name: Release body
+      env:
+        TAG: ${{ github.ref_name }}
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        {
+          cat "$RUNNER_TEMP/notes.txt"
+          echo ""
+          echo "### Install"
+          echo ""
+          echo "Download \`Nordyg-$VERSION.dmg\` below and drag Nordyg to Applications, or:"
+          echo ""
+          echo '```'
+          echo "brew install --cask n0rdy/n0rdy/nordyg"
+          echo '```'
+          echo ""
+          echo "Nordyg updates itself after that. The DMG is signed and notarized, and its build provenance is attested:"
+          echo ""
+          echo '```'
+          echo "gh attestation verify Nordyg-$VERSION.dmg --repo n0rdy/nordyg"
+          echo '```'
+        } > dist/notes.md
+
+    - name: Upload release artifacts
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: release
+        path: dist/
+
+    - name: Remove the signing keychain
+      if: always()
+      run: |
+        security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
+        rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/sparkle.key" "$RUNNER_TEMP/cert.p12"
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download release artifacts
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      with:
+        name: release
+        path: ./dist/
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: ${{ github.ref_name }}
+        body_path: dist/notes.md
+        files: |
+          dist/*.dmg
+          dist/*.sha256
+          dist/appcast.xml
+        draft: false
+        prerelease: false
+
+  cask:
+    needs: release
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+    - name: Download release artifacts
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      with:
+        name: release
+        path: ./dist/
+
+    - name: Checkout the tap
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        repository: n0rdy/homebrew-n0rdy
+        token: ${{ secrets.PUBLISHER_TOKEN }}
+        path: tap
+
+    - name: Update the cask
+      env:
+        TAG: ${{ github.ref_name }}
+      run: |
+        VERSION="${TAG#v}"
+        SHA=$(cut -d' ' -f1 "dist/Nordyg-$VERSION.dmg.sha256")
+        mkdir -p tap/Casks
+        cat > tap/Casks/nordyg.rb <<EOF
+        cask "nordyg" do
+          version "$VERSION"
+          sha256 "$SHA"
+
+          url "https://github.com/n0rdy/nordyg/releases/download/v#{version}/Nordyg-#{version}.dmg"
+          name "Nordyg"
+          desc "DNS client with DNSSEC validation, traces, and mail and zone checks"
+          homepage "https://nordyg.com/"
+
+          # Sparkle updates the app itself.
+          auto_updates true
+          depends_on macos: ">= :sonoma"
+
+          app "Nordyg.app"
+
+          zap trash: [
+            "~/Library/Application Scripts/foo.n0rdy.nordyg",
+            "~/Library/Containers/foo.n0rdy.nordyg",
+          ]
+        end
+        EOF
+        cat tap/Casks/nordyg.rb
+        cd tap
+        git config user.name n0rdy
+        git config user.email n0rdy@pm.me
+        git add Casks/nordyg.rb
+        git commit -m "Brew cask update for nordyg version $TAG"
+        git push
