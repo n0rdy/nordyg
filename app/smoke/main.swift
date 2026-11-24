@@ -63,6 +63,26 @@ struct Smoke {
         let exp: ExportResult = try await core.call("export", ExportParams(question: Question(name: "example.com", type: "MX", qclass: nil), endpoint: Endpoint(transport: "dot", address: "9.9.9.9:853", tlsName: "dns.quad9.net", url: nil, method: nil, label: nil), options: Options(dnssecOk: false, timeoutMs: 2000), format: "dig"))
         check(exp.command == "dig @9.9.9.9 example.com MX +tls +tls-hostname=dns.quad9.net +timeout=2", "export encodes options: \(exp.command)")
 
+        // 7b. the app's ExportSupport table matches what the core accepts.
+        let sample: [String: Endpoint] = [
+            "udp": Endpoint(transport: "udp", address: "9.9.9.9:53", tlsName: nil, url: nil, method: nil, label: nil),
+            "tcp": Endpoint(transport: "tcp", address: "9.9.9.9:53", tlsName: nil, url: nil, method: nil, label: nil),
+            "dot": Endpoint(transport: "dot", address: "9.9.9.9:853", tlsName: "dns.quad9.net", url: nil, method: nil, label: nil),
+            "doh": Endpoint(transport: "doh", address: nil, tlsName: nil, url: "https://dns.quad9.net/dns-query", method: nil, label: nil),
+            "doq": Endpoint(transport: "doq", address: "94.140.14.14:853", tlsName: "dns.adguard-dns.com", url: nil, method: nil, label: nil),
+        ]
+        var mismatches: [String] = []
+        for (transport, ep) in sample.sorted(by: { $0.key < $1.key }) {
+            for f in ExportSupport.formats {
+                var accepted = true
+                do {
+                    let _: ExportResult = try await core.call("export", ExportParams(question: Question(name: "example.com", type: "A", qclass: nil), endpoint: ep, options: Options(), format: f))
+                } catch let e as CoreError where e.code == "export_unsupported" { accepted = false }
+                if accepted != ExportSupport.can(f, over: transport) { mismatches.append("\(f) over \(transport)") }
+            }
+        }
+        check(mismatches.isEmpty, "Copy menu formats match the core (\(mismatches.isEmpty ? "20 pairs" : mismatches.joined(separator: ", ")))")
+
         if ProcessInfo.processInfo.environment["NORDYG_SMOKE_NET"] == "1" {
             let cf = Endpoint(transport: "dot", address: "1.1.1.1:853", tlsName: "cloudflare-dns.com", url: nil, method: nil, label: "Cloudflare DoT")
 

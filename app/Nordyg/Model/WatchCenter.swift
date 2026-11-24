@@ -172,10 +172,9 @@ enum WatchStore {
     }
 
     static func load() -> [Watch] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
-        return (try? d.decode([Watch].self, from: data)) ?? []
+        return SavedList.load(url, decoder: d)
     }
 
     static func save(_ items: [Watch]) {

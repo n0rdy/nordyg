@@ -50,7 +50,7 @@ struct ContentView: View {
                 } label: {
                     Label("Copy as", systemImage: "doc.on.doc")
                 }
-                .disabled(model.outcome == nil && model.name.isEmpty)
+                .disabled(model.outcome == nil && (model.name.isEmpty || model.commandFormats.isEmpty))
             }
         }
     }
@@ -173,6 +173,8 @@ struct RunErrorView: View {
             return ("Secure connection failed", "lock.trianglebadge.exclamationmark", "The resolver's certificate did not check out. Check the TLS name of a custom resolver.")
         case "http":
             return ("The DoH server refused", "exclamationmark.icloud", "The DNS-over-HTTPS server answered with an HTTP error. Check the URL of a custom resolver.")
+        case "resolver_unreachable":
+            return ("The resolver does not answer", "server.rack", "Pick another resolver in the menu next to the name, or check the network, a VPN or a firewall. A custom resolver may have a wrong address.")
         case "bad_endpoint", "bootstrap_required", "bootstrap_failed":
             return ("The resolver is not usable", "server.rack", "Check the resolver's address, or pick another one.")
         case "malformed_response":
@@ -308,13 +310,16 @@ struct ExportMenu: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        // A trace is only expressible as dig +trace.
-        ForEach(model.mode == .trace ? ["dig"] : ["dig", "nslookup", "doggo", "curl"], id: \.self) { fmt in
+        // Only the tools that can express this question (a trace is only
+        // expressible as dig +trace).
+        let formats = model.commandFormats
+        ForEach(formats, id: \.self) { fmt in
             Button(model.mode == .trace ? "Copy as dig +trace" : "Copy as \(fmt)") {
                 Task { if let cmd = await model.exportCommand(fmt) { Pasteboard.copy(cmd) } }
             }
+            .disabled(model.name.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        Divider()
+        if !formats.isEmpty { Divider() }
         Button("Copy result as JSON") { if let s = model.exportJSON() { Pasteboard.copy(s) } }
             .disabled(model.outcome == nil)
         Button("Copy answers as Markdown table") { if let s = MarkdownExport.table(model.outcome) { Pasteboard.copy(s) } }

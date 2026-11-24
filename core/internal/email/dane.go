@@ -146,10 +146,18 @@ func (op *Op) checkDANE(ctx context.Context, r *resolver, domain string, mx MXSe
 		}
 	}
 
+	// Every host at once: on a network that drops port 25 the whole step
+	// then costs one connect timeout, not one per host.
 	in := &certs.Inspector{Timeout: op.SMTPTimeout}
+	var probes sync.WaitGroup
 	for i := range sec.Hosts {
-		op.probeDANE(ctx, in, &sec.Hosts[i], mx.Hosts[i].Addresses)
+		probes.Add(1)
+		go func(i int) {
+			defer probes.Done()
+			op.probeDANE(ctx, in, &sec.Hosts[i], mx.Hosts[i].Addresses)
+		}(i)
 	}
+	probes.Wait()
 	judgeDANE(&sec, withTLSA, failed)
 	return sec
 }

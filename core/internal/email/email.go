@@ -203,7 +203,7 @@ type Op struct {
 	// SMTPAddrFor maps an MX address to ip:port for the DANE check.
 	// Defaults to port 25; tests replace it.
 	SMTPAddrFor func(ip string) string
-	// SMTPTimeout bounds each connection attempt (default 5 s).
+	// SMTPTimeout bounds each port 25 connect (default 3 s).
 	SMTPTimeout time.Duration
 	// Validator validates TLSA and MX records for DANE; nil means the
 	// embedded root anchors.
@@ -236,6 +236,9 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	domain = dns.Fqdn(domain)
 	r := &resolver{client: op.Client, ep: p.Endpoint, o: p.Options.Resolve(), boot: p.Bootstrap}
 	r.o.RecursionDesired = true
+	if err := op.Client.CheckResolver(ctx, p.Endpoint, r.o, p.Bootstrap); err != nil {
+		return nil, err
+	}
 
 	res := &Result{Domain: domain}
 	selectors := p.DKIMSelectors

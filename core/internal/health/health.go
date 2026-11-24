@@ -247,6 +247,9 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	}
 	o := p.Options.Resolve()
 	r := &resolver{client: op.Client, ep: p.Endpoint, o: o, boot: p.Bootstrap}
+	if err := op.Client.CheckResolver(ctx, p.Endpoint, o, p.Bootstrap); err != nil {
+		return nil, err
+	}
 	r.o.RecursionDesired = true
 
 	res := &Result{Domain: domain, Zone: domain}

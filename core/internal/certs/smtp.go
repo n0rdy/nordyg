@@ -22,13 +22,17 @@ func (e *DialError) Unwrap() error { return e.Err }
 
 // HandshakeSMTP connects to a mail server at addr, upgrades the session with
 // STARTTLS for sni and returns the TLS state without verifying anything.
-// Mail servers can be slow to greet, so it allows twice the timeout overall.
+// The connect is bounded by the inspector's timeout (3 s by default): a
+// reachable server accepts in milliseconds, and networks that block port 25
+// usually drop the packets, so waiting longer only makes the check slow.
+// Once connected, mail servers can be slow to greet, so the session gets
+// three times as long.
 func (in *Inspector) HandshakeSMTP(ctx context.Context, addr, sni string) (*tls.ConnectionState, error) {
 	timeout := in.Timeout
 	if timeout == 0 {
-		timeout = 5 * time.Second
+		timeout = 3 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*timeout)
+	ctx, cancel := context.WithTimeout(ctx, 4*timeout)
 	defer cancel()
 	conn, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", addr)
 	if err != nil {

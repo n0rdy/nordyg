@@ -143,6 +143,9 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 		return nil, err
 	}
 	o := p.Options.Resolve()
+	if err := op.Client.CheckResolver(ctx, p.Endpoint, o, p.Bootstrap); err != nil {
+		return nil, err
+	}
 	resolver := fetch.NewResolver(op.Client, p.Endpoint, o, p.Bootstrap)
 
 	if op.RefreshBootstrap {

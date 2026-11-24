@@ -18,13 +18,32 @@ struct HistoryItem: Codable, Identifiable, Hashable {
     }
 }
 
+/// Loads a saved list one entry at a time, so an entry that no longer decodes
+/// (an older format, a hand edit) costs that entry and not the whole list.
+/// A file that is not a list at all is moved aside as `<name>.unreadable.json`
+/// before anything is saved over it.
+enum SavedList {
+    private struct Lossy<T: Decodable>: Decodable {
+        let value: T?
+        init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+    }
+
+    static func load<T: Decodable>(_ url: URL, decoder: JSONDecoder = JSONDecoder()) -> [T] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        if let items = try? decoder.decode([Lossy<T>].self, from: data) { return items.compactMap(\.value) }
+        let aside = url.deletingPathExtension().appendingPathExtension("unreadable.json")
+        try? FileManager.default.removeItem(at: aside)
+        try? FileManager.default.moveItem(at: url, to: aside)
+        return []
+    }
+}
+
 /// Resolvers the user added, saved next to the history.
 enum CustomResolverStore {
     static var url: URL { HistoryStore.url.deletingLastPathComponent().appendingPathComponent("resolvers.json") }
 
     static func load() -> [Endpoint] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        return (try? JSONDecoder().decode([Endpoint].self, from: data)) ?? []
+        SavedList.load(url)
     }
 
     static func save(_ eps: [Endpoint]) {
@@ -46,10 +65,9 @@ enum HistoryStore {
     }
 
     static func load() -> [HistoryItem] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
-        return (try? d.decode([HistoryItem].self, from: data)) ?? []
+        return SavedList.load(url, decoder: d)
     }
 
     static func save(_ items: [HistoryItem]) {

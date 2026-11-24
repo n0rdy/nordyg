@@ -37,6 +37,9 @@ const (
 	CodeMalformed         = "malformed_response"
 	CodeTraceDeadEnd      = "trace_dead_end"
 	CodeExportUnsupported = "export_unsupported"
+	// CodeResolverUnreachable: the chosen resolver did not answer the probe
+	// an op sends before its many lookups.
+	CodeResolverUnreachable = "resolver_unreachable"
 )
 
 // JoinHostPort formats an IP literal and a port as an endpoint address.

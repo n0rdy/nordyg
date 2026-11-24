@@ -60,7 +60,7 @@ func setup(t *testing.T) *world {
 	cert := testdns.NewCert(t, "rdap.test", "registrar.test", "data.iana.test")
 	exp := time.Now().Add(20 * 24 * time.Hour).UTC().Format(time.RFC3339)
 	// WHOIS registries often give a bare date; keep it relative so the test never ages out.
-	whoisExp := time.Now().AddDate(0, 0, 200).UTC().Format("2006-01-02")
+	whoisExp := time.Now().UTC().AddDate(0, 0, 200).Format("2006-01-02")
 
 	var port string
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -465,3 +465,19 @@ extension Message {
     var isFiltered: Bool { edns?.options.contains { (15...18).contains($0.ede?.infoCode ?? 0) } ?? false }
     var addresses: [String] { answer.compactMap { ($0.type == "A" || $0.type == "AAAA") ? $0.rdata : nil } }
 }
+
+/// Which command-line tools can express a query over which transport, the
+/// rules of core/internal/export: dig has no DNS-over-QUIC, nslookup speaks
+/// only plain UDP/TCP, curl only DNS-over-HTTPS, doggo all of them. The smoke
+/// harness checks every pair against the core, so the two cannot drift.
+enum ExportSupport {
+    static let formats = ["dig", "nslookup", "doggo", "curl"]
+    static func can(_ format: String, over transport: String) -> Bool {
+        switch format {
+        case "dig": return transport != "doq"
+        case "nslookup": return transport == "udp" || transport == "tcp"
+        case "curl": return transport == "doh"
+        default: return true
+        }
+    }
+}

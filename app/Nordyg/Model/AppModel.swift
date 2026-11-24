@@ -503,11 +503,39 @@ final class AppModel: ObservableObject {
             mode = Mode(rawValue: item.mode) ?? .query
             if mode == .query { severalResolvers = false }
         }
-        if let ep = item.endpoint { selected = ep }
+        // The resolver the entry used, if it is still in the list. "System"
+        // means whatever this Mac uses now, so an old system address quietly
+        // becomes the current one; a removed resolver is said out loud.
+        var note: String?
+        if let ep = item.endpoint {
+            if let same = allEndpoints.first(where: { $0.sameServer(as: ep) }) {
+                selected = same
+            } else if ep.label?.hasPrefix("System") == true, let sys = systemEndpoints.first(where: { $0.transport == ep.transport }) ?? systemEndpoints.first {
+                selected = sys
+            } else if let current = selected {
+                note = "\(ep.title) is no longer in your resolver list, so this ran with \(current.title) instead."
+            }
+        }
         run()
+        if let note { errorMessage = note }
     }
 
     // MARK: export
+
+    /// Command-line formats that can express the current question, so the
+    /// Copy menu offers nothing the core would refuse (see ExportSupport).
+    /// With several resolvers a format must cover every one. Email, Registry
+    /// and Zone check are many lookups that no single command expresses.
+    var commandFormats: [String] {
+        switch mode {
+        case .trace: return ["dig"]
+        case .email, .registry, .health: return []
+        case .query: break
+        }
+        let eps = severalResolvers ? allEndpoints.filter { compareSelection.contains($0) } : (selected.map { [$0] } ?? [])
+        guard !eps.isEmpty else { return [] }
+        return ExportSupport.formats.filter { f in eps.allSatisfy { ExportSupport.can(f, over: $0.transport) } }
+    }
 
     func exportCommand(_ format: String) async -> String? {
         // Several resolvers export one command each, in picker order. Trace
@@ -639,4 +667,12 @@ struct ModeExample: Hashable {
     var type: String?
     var note: String?
     var several = false
+}
+
+extension Endpoint {
+    /// The same server, whatever it is called: labels change ("System …"
+    /// follows the network), the address and transport do not.
+    func sameServer(as other: Endpoint) -> Bool {
+        transport == other.transport && address == other.address && url == other.url && tlsName == other.tlsName && (method ?? "") == (other.method ?? "")
+    }
 }
