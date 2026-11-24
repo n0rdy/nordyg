@@ -6,7 +6,7 @@
 #   make app      build the SwiftUI app (Debug, ad-hoc signed)
 #   make run      build and open the app
 #   make xcodeproj regenerate app/Nordyg.xcodeproj from app/project.yml
-#   make icon     render app/Nordyg/AppIcon.icon's layer from app/design/logo-tile.png
+#   make icon     put app/design/logo.svg into AppIcon.icon and render the site PNGs
 #   make landing  build the website (landing/dist); make landing-dev runs the dev server
 #   make clean
 #
