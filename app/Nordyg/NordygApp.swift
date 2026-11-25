@@ -16,8 +16,12 @@ struct NordygApp: App {
                     DebugHooks.install(model: model)
                     #endif
                 }
-                .frame(minWidth: 900, minHeight: 560)
+                // Below 1000 points the toolbar runs out of room and Clear and
+                // Copy collapse into its overflow menu.
+                .frame(minWidth: 1000, minHeight: 600)
         }
+        // First launch only: after that macOS restores the last size.
+        .defaultSize(width: 1240, height: 800)
         MenuBarExtra(isInserted: Binding(get: { !model.watches.watches.isEmpty }, set: { _ in })) {
             WatchMenu()
                 .environmentObject(model.watches)
