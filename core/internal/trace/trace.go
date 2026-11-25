@@ -1,12 +1,12 @@
-// Package trace implements the "trace" op (contract §6): iterative resolution
+// Package trace implements the "trace" op: iterative resolution
 // from the root, reporting every hop like dig +trace.
 package trace
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -92,13 +92,7 @@ type candidate struct {
 
 // Register attaches the op to d.
 func (op *Op) Register(d *bridge.Dispatcher) {
-	d.Register("trace", func(ctx context.Context, raw json.RawMessage) (any, error) {
-		var p Params
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, &bridge.Error{Code: bridge.CodeBadRequest, Message: "params: " + err.Error()}
-		}
-		return op.Run(ctx, p)
-	})
+	d.Register("trace", bridge.Typed(op.Run))
 }
 
 func (op *Op) addr(c candidate, ip string) string {
@@ -125,7 +119,6 @@ func (op *Op) roots(p Params) ([]candidate, error) {
 
 type run struct {
 	op    *Op
-	p     Params
 	o     contract.Effective
 	roots []candidate
 	hops  []Hop
@@ -145,7 +138,7 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	o := p.Options.Resolve()
 	o.RecursionDesired = false
 
-	s := &run{op: op, p: p, o: o, roots: roots, hops: []Hop{}}
+	s := &run{op: op, o: o, roots: roots, hops: []Hop{}}
 	final, err := s.trace(ctx, r.Name, r.Type, r.Class, 0, 0)
 	if err != nil {
 		return nil, s.fail(ctx, err)
@@ -212,7 +205,7 @@ func (s *run) trace(ctx context.Context, qname string, qtype, qclass uint16, cna
 			return hop.Message, nil
 		case kindCNAME:
 			if cnameDepth >= maxCNAME {
-				return contract.Message{}, &bridge.Error{Code: contract.CodeTraceDeadEnd, Message: "CNAME chain longer than " + itoa(maxCNAME)}
+				return contract.Message{}, &bridge.Error{Code: contract.CodeTraceDeadEnd, Message: "CNAME chain longer than " + strconv.Itoa(maxCNAME)}
 			}
 			target := cnameTarget(resp, qname)
 			return s.trace(ctx, target, qtype, qclass, cnameDepth+1, nestDepth)
@@ -224,7 +217,7 @@ func (s *run) trace(ctx context.Context, qname string, qtype, qclass uint16, cna
 			}
 		}
 	}
-	return contract.Message{}, &bridge.Error{Code: contract.CodeTraceDeadEnd, Message: "more than " + itoa(maxHops) + " hops"}
+	return contract.Message{}, &bridge.Error{Code: contract.CodeTraceDeadEnd, Message: "more than " + strconv.Itoa(maxHops) + " hops"}
 }
 
 // step queries the candidates for zone one by one until a usable response.
@@ -352,11 +345,11 @@ func referralOf(m *dns.Msg, zone, qname string) *Referral {
 		name := strings.ToLower(rr.Header().Name)
 		switch a := rr.(type) {
 		case *dns.A:
-			if contains(ref.Nameservers, name) {
+			if slices.Contains(ref.Nameservers, name) {
 				ref.Glue[name] = append(ref.Glue[name], a.A.String())
 			}
 		case *dns.AAAA:
-			if contains(ref.Nameservers, name) {
+			if slices.Contains(ref.Nameservers, name) {
 				ref.Glue[name] = append(ref.Glue[name], a.AAAA.String())
 			}
 		}
@@ -385,8 +378,9 @@ func (s *run) candidatesFor(ctx context.Context, ref *Referral, nestDepth int) (
 	if nestDepth >= maxNestDepth {
 		return nil, &bridge.Error{Code: contract.CodeTraceDeadEnd, Message: "no glue for " + ref.Zone + " and nested lookup depth exceeded"}
 	}
-	// Resolve a few nameserver names out of band with a nested trace.
-	sub := &run{op: s.op, p: s.p, o: s.o, roots: s.roots}
+	// Resolve a few nameserver names out of band with a nested trace. Its
+	// hops stay in sub, so they are not part of the main chain.
+	sub := &run{op: s.op, o: s.o, roots: s.roots}
 	looked := 0
 	for _, ns := range ref.Nameservers {
 		if looked >= maxGlueLookup {
@@ -399,7 +393,7 @@ func (s *run) candidatesFor(ctx context.Context, ref *Referral, nestDepth int) (
 		}
 		var ips []string
 		for _, rr := range final.Answer {
-			if rr.Type == "A" || rr.Type == "AAAA" {
+			if rr.Type == "A" {
 				ips = append(ips, rr.Fields["address"].(string))
 			}
 		}
@@ -407,23 +401,29 @@ func (s *run) candidatesFor(ctx context.Context, ref *Referral, nestDepth int) (
 			out = append(out, candidate{Name: ns, IPs: sortIPs(ips)})
 		}
 	}
-	// Nested hops are not part of the main chain; keep only the main hops.
 	if len(out) == 0 {
 		return nil, &bridge.Error{Code: contract.CodeTraceDeadEnd, Message: "could not find an address for any nameserver of " + ref.Zone}
 	}
 	return out, nil
 }
 
+// cnameTarget follows the CNAME chain for qname through one answer section.
+// It takes at most one step per record, so a chain that loops back on itself
+// ends there and the caller's maxCNAME reports it.
 func cnameTarget(m *dns.Msg, qname string) string {
 	name := qname
-	for changed := true; changed; {
-		changed = false
+	for range m.Answer {
+		next, found := "", false
 		for _, rr := range m.Answer {
 			if c, ok := rr.(*dns.CNAME); ok && strings.EqualFold(c.Hdr.Name, name) {
-				name = strings.ToLower(c.Target)
-				changed = true
+				next, found = strings.ToLower(c.Target), true
+				break
 			}
 		}
+		if !found {
+			break
+		}
+		name = next
 	}
 	return dns.Fqdn(name)
 }
@@ -436,14 +436,3 @@ func sortIPs(ips []string) []string {
 	})
 	return out
 }
-
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
-func itoa(i int) string { return strconv.Itoa(i) }

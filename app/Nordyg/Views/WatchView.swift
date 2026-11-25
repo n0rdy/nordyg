@@ -10,10 +10,16 @@ struct WatchView: View {
         if let w = watches.watches.first(where: { $0.id == id }) {
             VStack(spacing: 0) {
                 StatusStrip {
-                    Pill(text: w.paused ? "paused" : "watching", icon: w.paused ? "pause.circle" : "eye", color: w.paused ? .secondary : .accentColor,
-                         help: "Nordyg re-runs this query every \(w.intervalLabel) and records every answer. A change in the answer set or rcode is logged and sent as a notification.")
+                    Pill(
+                        text: w.paused ? "paused" : "watching", icon: w.paused ? "pause.circle" : "eye",
+                        color: w.paused ? .secondary : .accentColor,
+                        help:
+                            "Nordyg re-runs this query every \(w.intervalLabel) and records every answer. A change in the answer set or rcode is logged and sent as a notification."
+                    )
                     Pill(text: "every \(w.intervalLabel)", icon: "timer", mono: true)
-                    Pill(text: "\(w.changes) change\(w.changes == 1 ? "" : "s")", icon: "arrow.triangle.2.circlepath", color: w.changes > 0 ? .orange : .secondary, mono: true)
+                    Pill(
+                        text: plural(w.changes, "change"), icon: "arrow.triangle.2.circlepath", color: w.changes > 0 ? .orange : .secondary,
+                        mono: true)
                     Pill(text: "\(w.events.count) checks", mono: true)
                     Pill(text: w.endpoint.title, icon: "server.rack")
                     Spacer()
@@ -24,15 +30,30 @@ struct WatchView: View {
                 }
                 Divider()
                 HStack(spacing: 10) {
-                    Button { watches.checkNow(id) } label: { Label("Check now", systemImage: "arrow.clockwise") }
-                    Button { watches.setPaused(id, !w.paused) } label: { Label(w.paused ? "Resume" : "Pause", systemImage: w.paused ? "play" : "pause") }
+                    Button {
+                        watches.checkNow(id)
+                    } label: {
+                        Label("Check now", systemImage: "arrow.clockwise")
+                    }
+                    Button {
+                        watches.setPaused(id, !w.paused)
+                    } label: {
+                        Label(w.paused ? "Resume" : "Pause", systemImage: w.paused ? "play" : "pause")
+                    }
                     Menu {
                         ForEach(WatchCenter.intervals, id: \.self) { s in
                             Button(WatchCenter.intervalLabel(s)) { watches.setInterval(id, s) }
                         }
-                    } label: { Label("Interval", systemImage: "timer") }.fixedSize()
+                    } label: {
+                        Label("Interval", systemImage: "timer")
+                    }.fixedSize()
                     Spacer()
-                    Button(role: .destructive) { watches.remove(id); model.selectedWatch = nil } label: { Label("Stop watching", systemImage: "eye.slash") }
+                    Button(role: .destructive) {
+                        watches.remove(id)
+                        model.selectedWatch = nil
+                    } label: {
+                        Label("Stop watching", systemImage: "eye.slash")
+                    }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 Divider()
@@ -42,7 +63,8 @@ struct WatchView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(w.events.enumerated()), id: \.element.id) { i, e in
-                                EventRow(event: e, previous: i + 1 < w.events.count ? w.events[i + 1] : nil, isLast: i == w.events.count - 1)
+                                EventRow(
+                                    event: e, previous: i + 1 < w.events.count ? w.events[i + 1] : nil, isLast: i == w.events.count - 1)
                             }
                         }
                         .padding(16)
@@ -70,13 +92,16 @@ struct EventRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 0) {
-                Circle().fill(color).frame(width: event.changed || event.error != nil ? 12 : 8, height: event.changed || event.error != nil ? 12 : 8).padding(.top, event.changed || event.error != nil ? 4 : 6)
+                Circle().fill(color).frame(
+                    width: event.changed || event.error != nil ? 12 : 8, height: event.changed || event.error != nil ? 12 : 8
+                ).padding(.top, event.changed || event.error != nil ? 4 : 6)
                 if !isLast { Rectangle().fill(Color.secondary.opacity(0.25)).frame(width: 2).frame(maxHeight: .infinity) }
             }
             .frame(width: 12)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(event.date.formatted(date: .abbreviated, time: .standard)).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+                    Text(event.date.formatted(date: .abbreviated, time: .standard)).font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(.secondary)
                     if let err = event.error {
                         Pill(text: "error", icon: "xmark.circle", color: .red)
                         Text(err).font(.callout).foregroundStyle(.red).lineLimit(1)
@@ -105,20 +130,38 @@ struct AnswerDiff: View {
         let added = after.filter { !before.contains($0) }
         let kept = after.filter { before.contains($0) }
         VStack(alignment: .leading, spacing: 1) {
-            ForEach(removed, id: \.self) { Text("− \($0)").foregroundStyle(.red) }
-            ForEach(added, id: \.self) { Text("+ \($0)").foregroundStyle(.green) }
-            if showUnchanged { ForEach(kept, id: \.self) { Text("  \($0)").foregroundStyle(.secondary) } }
-            if after.isEmpty && added.isEmpty && removed.isEmpty { Text("  (no answer records)").foregroundStyle(.secondary) }
+            ForEach(removed, id: \.self) { Text(verbatim: "− \($0)").foregroundStyle(.red) }
+            ForEach(added, id: \.self) { Text(verbatim: "+ \($0)").foregroundStyle(.green) }
+            if showUnchanged { ForEach(kept, id: \.self) { Text(verbatim: "  \($0)").foregroundStyle(.secondary) } }
+            if after.isEmpty && removed.isEmpty { Text("  (no answer records)").foregroundStyle(.secondary) }
         }
         .font(.system(.callout, design: .monospaced))
         .textSelection(.enabled)
     }
 }
 
+/// One button per interval ("Every 30 s", "Every 5 min"…), each starting a
+/// watch on the current query.
+struct WatchIntervalButtons: View {
+    let model: AppModel
+    var body: some View {
+        ForEach(WatchCenter.intervals, id: \.self) { s in
+            Button("Every \(WatchCenter.intervalLabel(s))") { model.watchCurrent(interval: s) }
+        }
+    }
+}
+
+/// Grey when paused, orange with an unseen change, green otherwise.
+struct WatchDot: View {
+    var watch: Watch
+    var body: some View {
+        Circle().fill(watch.paused ? Color.secondary : (watch.unread ? Color.orange : Color.green)).frame(width: 8, height: 8)
+    }
+}
+
 /// Contents of the menu bar extra.
 struct WatchMenu: View {
     @EnvironmentObject var watches: WatchCenter
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -128,13 +171,17 @@ struct WatchMenu: View {
             } else {
                 ForEach(watches.watches) { w in
                     HStack(spacing: 8) {
-                        Circle().fill(w.paused ? Color.secondary : (w.unread ? Color.orange : Color.green)).frame(width: 8, height: 8)
+                        WatchDot(watch: w)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(w.title).font(.system(.callout, design: .monospaced))
                             Text(lastLine(w)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
-                        Button { watches.checkNow(w.id) } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).help("Check now")
+                        Button {
+                            watches.checkNow(w.id)
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }.buttonStyle(.plain).help("Check now")
                     }
                 }
             }
@@ -152,6 +199,6 @@ struct WatchMenu: View {
         guard let e = w.last else { return "waiting for first check" }
         let when = e.date.formatted(date: .omitted, time: .shortened)
         if let err = e.error { return "\(when) error: \(err)" }
-        return "\(when) \(e.rcode) \(e.answers.isEmpty ? "" : e.answers.joined(separator: ", "))" + (w.changes > 0 ? " · \(w.changes) change\(w.changes == 1 ? "" : "s")" : "")
+        return "\(when) \(e.rcode) \(e.answers.joined(separator: ", "))" + (w.changes > 0 ? " · \(plural(w.changes, "change"))" : "")
     }
 }

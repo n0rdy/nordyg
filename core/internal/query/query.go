@@ -1,10 +1,9 @@
-// Package query implements the "query" op (contract §4): one question to one
+// Package query implements the "query" op: one question to one
 // endpoint, returning the parsed message and the wire exchange.
 package query
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -33,8 +32,7 @@ type Result struct {
 	DNSSEC       any               `json:"dnssec,omitempty"`
 }
 
-// Validator produces the DNSSEC verdict for a completed query. It is nil
-// until the dnssec package is wired in.
+// Validator produces the DNSSEC verdict for a completed query.
 type Validator interface {
 	Validate(ctx context.Context, r contract.Resolved, res *transport.Result, ep contract.Endpoint, o contract.Effective, bootstrap []contract.Endpoint) (any, error)
 }
@@ -51,22 +49,10 @@ type Op struct {
 
 // Register attaches the op to d.
 func (op *Op) Register(d *bridge.Dispatcher) {
-	d.Register("query", op.Handle)
+	d.Register("query", bridge.Typed(op.Run))
 }
 
-// Handle is the bridge handler.
-func (op *Op) Handle(ctx context.Context, raw json.RawMessage) (any, error) {
-	var p Params
-	if len(raw) == 0 {
-		return nil, &bridge.Error{Code: bridge.CodeBadRequest, Message: "params required"}
-	}
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, &bridge.Error{Code: bridge.CodeBadRequest, Message: "params: " + err.Error()}
-	}
-	return op.Run(ctx, p)
-}
-
-// Run performs the query. Exported so compare and trace can reuse it.
+// Run performs the query. Exported so compare can reuse it.
 func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	r, err := p.Question.Resolve()
 	if err != nil {

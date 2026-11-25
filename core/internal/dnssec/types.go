@@ -1,5 +1,5 @@
 // Package dnssec validates answers against the root trust anchors and reports
-// the chain link by link (contract §2.7). It never trusts a resolver's AD bit.
+// the chain link by link. It never trusts a resolver's AD bit.
 package dnssec
 
 import "time"
@@ -60,4 +60,17 @@ type Result struct {
 	TrustAnchor      *KeyRef     `json:"trust_anchor"`
 	Chain            []Link      `json:"chain"`
 	AnswerSignatures []Signature `json:"answer_signatures"`
+	Related          []Related   `json:"related"`
+}
+
+// Related is the chain for an answer RRset signed by a zone other than the
+// queried name's (a CNAME into another zone), validated from the root on its
+// own. Status folds into the parent Result's status.
+type Related struct {
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Signer string `json:"signer"`
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+	Chain  []Link `json:"chain"`
 }

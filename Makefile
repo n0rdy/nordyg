@@ -1,22 +1,24 @@
 # Nordyg build. Targets:
-#   make test     run Go tests
+#   make test     run Go tests (uncached, since they also write the samples make smoke decodes)
 #   make archive  build the universal static library core/build/libnordyg.a + header
 #   make smoke    build and run the Swift bridge harness against the archive
-#   make lint     golangci-lint on the core
+#   make lint     golangci-lint on the core, swift format lint on the app
+#   make format   rewrite the app's Swift in the house format (app/.swift-format)
 #   make app      build the SwiftUI app (Debug, ad-hoc signed)
 #   make run      build and open the app
+#   make debug-tool  build app/build/nordyg-debug, which drives a running Debug build
 #   make xcodeproj regenerate app/Nordyg.xcodeproj from app/project.yml
-#   make icon     render app/Nordyg/AppIcon.icon's layer from app/design/logo-tile.png
+#   make icon     put app/design/logo.svg into AppIcon.icon and render the site PNGs
 #   make landing  build the website (landing/dist); make landing-dev runs the dev server
 #   make clean
 #
 # Go is pinned via GOTOOLCHAIN so the version on PATH does not matter.
 
-GO_VERSION      := 1.27.0
+GO_VERSION      := 1.27.4
 export GOTOOLCHAIN := go$(GO_VERSION)
 export CGO_ENABLED := 1
 
-# App Store minimum. Keep in sync with the Xcode deployment target.
+# Oldest macOS the app runs on. Keep in sync with the Xcode deployment target.
 MACOSX_MIN      := 14.0
 export CGO_CFLAGS  := -mmacosx-version-min=$(MACOSX_MIN)
 export CGO_LDFLAGS := -mmacosx-version-min=$(MACOSX_MIN)
@@ -31,16 +33,27 @@ GO_SRC   := $(shell find $(CORE) -name '*.go' -not -path '$(BUILD)/*') $(CORE)/g
 
 APP_HDR  := app/NordygCore/libnordyg.h
 SMOKE    := app/build/nordyg-smoke
+# One result of every op, written by the Go tests from their fixtures, for the
+# smoke harness to decode with the app's own types.
+SAMPLES  := app/build/samples
 
-.PHONY: all test archive smoke lint clean
+.PHONY: all test archive smoke lint format clean
 
 all: archive
 
 test:
-	cd $(CORE) && go test ./...
+	@rm -rf $(SAMPLES) && mkdir -p $(SAMPLES)
+	cd $(CORE) && NORDYG_SAMPLES=$(abspath $(SAMPLES)) go test -count=1 ./...
+	@touch $(SAMPLES)/.stamp
+
+SWIFT_SRC := app/Nordyg app/smoke app/tools
 
 lint:
 	cd $(CORE) && golangci-lint run ./...
+	swift format lint --strict -r $(SWIFT_SRC)
+
+format:
+	swift format format -i -r $(SWIFT_SRC)
 
 $(BUILD)/libnordyg_amd64.a: $(GO_SRC)
 	@mkdir -p $(BUILD)
@@ -64,7 +77,7 @@ $(APP_HDR): $(BUILD)/libnordyg.h
 archive: $(BUILD)/libnordyg.a $(APP_HDR)
 
 SMOKE_SRC := app/smoke/main.swift app/Nordyg/Core/CoreBridge.swift app/Nordyg/Core/Contract.swift \
-             app/Nordyg/Core/JSONValue.swift app/Nordyg/Core/SystemResolvers.swift app/Nordyg/Core/SystemLookup.swift
+             app/Nordyg/Core/JSONValue.swift app/Nordyg/Core/SystemResolvers.swift app/Nordyg/Core/SystemLookup.swift app/Nordyg/Core/DNSConfiguration.swift
 
 $(SMOKE): archive $(SMOKE_SRC)
 	@mkdir -p app/build
@@ -72,8 +85,13 @@ $(SMOKE): archive $(SMOKE_SRC)
 	  -framework CoreFoundation -framework Security -framework SystemConfiguration -o $@
 	codesign --force --sign - --options runtime $@
 
-smoke: $(SMOKE)
-	$(SMOKE)
+# make test leaves the samples behind. They are rebuilt here only when the Go
+# sources are newer, so CI's test step is the one run of the suite.
+$(SAMPLES)/.stamp: $(GO_SRC)
+	$(MAKE) test
+
+smoke: $(SMOKE) $(SAMPLES)/.stamp
+	NORDYG_SAMPLES=$(SAMPLES) $(SMOKE)
 
 # --- SwiftUI app ---------------------------------------------------------------
 
@@ -81,15 +99,17 @@ XCODEPROJ := app/Nordyg.xcodeproj
 DERIVED   := app/build/DerivedData
 APP       := $(DERIVED)/Build/Products/Debug/Nordyg.app
 
-.PHONY: xcodeproj app run icon
+.PHONY: xcodeproj app run icon debug-tool
 
 # Regenerate the Xcode project from app/project.yml (needs xcodegen).
 xcodeproj:
 	cd app && xcodegen generate
 
-# Render the Icon Composer package's layer from the logo tile.
+# Put the logo (app/design/logo.svg) into the Icon Composer package and
+# render the site's PNGs from it. Regenerate the SVG first with
+# app/design/logo.py when its geometry changes.
 icon:
-	swift app/tools/make-icon.swift app/design/logo-tile.png app/Nordyg/AppIcon.icon
+	swift app/tools/make-icon.swift app/design/logo.svg app/Nordyg/AppIcon.icon landing/public
 
 # Debug build of the app, ad-hoc signed (no team needed).
 app: archive
@@ -101,7 +121,14 @@ app: archive
 run: app
 	open $(APP)
 
-# --- Website (landing + docs, Astro/Starlight in landing/) -----------------------
+# Sends commands to a running Debug build (see app/Nordyg/DebugHooks.swift).
+debug-tool: app/build/nordyg-debug
+
+app/build/nordyg-debug: app/tools/nordyg-debug.swift
+	@mkdir -p app/build
+	swiftc -O -o $@ $<
+
+# --- Website (plain Astro in landing/) -------------------------------------------
 
 .PHONY: landing landing-dev
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -129,6 +130,31 @@ func TestCancelAbortsInflightRequest(t *testing.T) {
 func TestCancelUnknownIDIsNoop(t *testing.T) {
 	if New().Cancel("ghost") {
 		t.Fatal("expected false for unknown id")
+	}
+}
+
+func TestCancelBeforeTheRequestArrives(t *testing.T) {
+	d := New()
+	ran := false
+	d.Register("op", func(context.Context, json.RawMessage) (any, error) {
+		ran = true
+		return "done", nil
+	})
+	d.Cancel("early")
+	r := decode(t, d.Dispatch([]byte(`{"id":"early","op":"op"}`)))
+	if r.OK || r.Error.Code != CodeCancelled || ran {
+		t.Fatalf("a request cancelled in advance must not run: %+v (ran %v)", r, ran)
+	}
+	// The cancel is spent: the same id is free to run again.
+	if r := decode(t, d.Dispatch([]byte(`{"id":"early","op":"op"}`))); !r.OK {
+		t.Fatalf("second request: %+v", r)
+	}
+	// Old cancels do not pile up or shadow new requests.
+	for i := range maxEarlyCancels + 1 {
+		d.Cancel("late-" + strconv.Itoa(i))
+	}
+	if r := decode(t, d.Dispatch([]byte(`{"id":"late-0","op":"op"}`))); !r.OK {
+		t.Fatalf("the oldest remembered cancel should have been dropped: %+v", r)
 	}
 }
 

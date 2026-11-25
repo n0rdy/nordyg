@@ -8,7 +8,6 @@ enum SystemResolvers {
     struct Entry: Hashable {
         var interface: String?
         var addresses: [String]
-        var searchDomains: [String]
     }
 
     static func current() -> [Entry] {
@@ -31,9 +30,21 @@ enum SystemResolvers {
     }
 
     /// Endpoints for the picker: one per resolver address, labelled by interface.
+    /// Taken from the resolvers macOS really uses, in its order, when that list
+    /// is available; the dynamic store also lists DHCP settings that an override
+    /// (a VPN, a manual DNS server) has replaced.
     static func endpoints() -> [Endpoint] {
         var seen = Set<String>()
         var out: [Endpoint] = []
+        if let real = DNSConfiguration.current() {
+            let defaults = real.filter { !$0.scoped && $0.domain == nil && !$0.isMulticast }.sorted { $0.order < $1.order }
+            for r in defaults {
+                for ip in r.nameservers where seen.insert(ip).inserted {
+                    out.append(Endpoint(transport: "udp", address: hostPort(ip, 53), label: "System \(ip)"))
+                }
+            }
+            if !out.isEmpty { return out }
+        }
         for e in current() {
             for ip in e.addresses where seen.insert(ip).inserted {
                 let label = e.interface.map { "System (\($0)) \(ip)" } ?? "System \(ip)"
@@ -44,9 +55,7 @@ enum SystemResolvers {
     }
 
     private static func entry(from dict: [String: Any], interface: String?) -> Entry {
-        Entry(interface: interface,
-              addresses: dict["ServerAddresses"] as? [String] ?? [],
-              searchDomains: dict["SearchDomains"] as? [String] ?? [])
+        Entry(interface: interface, addresses: dict["ServerAddresses"] as? [String] ?? [])
     }
 
     private static func serviceName(_ store: SCDynamicStore, _ dnsKey: String) -> String? {

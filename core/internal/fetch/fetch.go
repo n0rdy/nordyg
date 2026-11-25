@@ -1,6 +1,6 @@
 // Package fetch does HTTPS GETs and raw TCP exchanges for hosts resolved
 // through the user's chosen DNS resolver, never the system one. Used by the
-// email (MTA-STS) and rdap ops.
+// rdap, health and email ops.
 package fetch
 
 import (
@@ -15,9 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/miekg/dns"
-
 	"github.com/n0rdy/nordyg/core/internal/contract"
+	"github.com/n0rdy/nordyg/core/internal/resolve"
 	"github.com/n0rdy/nordyg/core/internal/transport"
 )
 
@@ -27,37 +26,19 @@ type Resolver func(ctx context.Context, host string) ([]string, error)
 // NewResolver resolves A and AAAA through the given endpoint.
 func NewResolver(c *transport.Client, ep contract.Endpoint, o contract.Effective, boot []contract.Endpoint) Resolver {
 	o.RecursionDesired = true
+	r := &resolve.Resolver{Client: c, Endpoint: ep, Options: o, Bootstrap: boot}
 	return func(ctx context.Context, host string) ([]string, error) {
 		if ip := net.ParseIP(host); ip != nil {
 			return []string{host}, nil
 		}
-		var out []string
-		var firstErr error
-		for _, t := range []uint16{dns.TypeA, dns.TypeAAAA} {
-			q := o.Build(contract.Resolved{Name: dns.Fqdn(host), Type: t, Class: dns.ClassINET})
-			res, err := c.Exchange(ctx, ep, q, o, boot)
-			if err != nil {
-				if firstErr == nil {
-					firstErr = err
-				}
-				continue
-			}
-			for _, rr := range res.Msg.Answer {
-				switch a := rr.(type) {
-				case *dns.A:
-					out = append(out, a.A.String())
-				case *dns.AAAA:
-					out = append(out, a.AAAA.String())
-				}
-			}
+		addrs, err := r.Addrs(ctx, host)
+		if err != nil {
+			return nil, err
 		}
-		if len(out) == 0 {
-			if firstErr != nil {
-				return nil, firstErr
-			}
+		if len(addrs) == 0 {
 			return nil, errors.New("no address for " + host)
 		}
-		return out, nil
+		return addrs, nil
 	}
 }
 
@@ -66,7 +47,6 @@ type Response struct {
 	Status      int
 	ContentType string
 	Body        []byte
-	FinalURL    string
 }
 
 const (
@@ -75,8 +55,7 @@ const (
 )
 
 // Get fetches an https URL, following redirects, dialing pinned addresses.
-// Tests may set RootCAs on the client used to build the resolver; here the
-// TLS config takes the optional pool.
+// Only RootCAs is read from roots, and nil means the system pool.
 func Get(ctx context.Context, rawURL, accept string, r Resolver, roots *tls.Config) (*Response, error) {
 	cur := rawURL
 	for hop := 0; hop <= maxRedirects; hop++ {
@@ -107,10 +86,60 @@ func Get(ctx context.Context, rawURL, accept string, r Resolver, roots *tls.Conf
 			cur = next.String()
 			continue
 		}
-		resp.FinalURL = cur
 		return &resp.Response, nil
 	}
 	return nil, errors.New("too many redirects")
+}
+
+// GetPinned fetches an https URL from addresses the caller already resolved
+// and follows no redirect, so a 3xx comes back as the response.
+func GetPinned(ctx context.Context, rawURL string, ips []string) (*Response, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme != "https" {
+		return nil, fmt.Errorf("refusing non-https URL %s", rawURL)
+	}
+	port := u.Port()
+	if port == "" {
+		port = "443"
+	}
+	resp, err := getOnce(ctx, u, ips, port, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	return &resp.Response, nil
+}
+
+// GetSigned fetches an object that carries its own signature, such as a
+// certificate revocation list. CAs publish those over plain HTTP by design,
+// so http is allowed here, unlike Get; the caller must verify the signature
+// before trusting a single byte. No redirects are followed.
+func GetSigned(ctx context.Context, rawURL string, r Resolver) ([]byte, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("unsupported URL %s", rawURL)
+	}
+	ips, err := r(ctx, u.Hostname())
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", u.Hostname(), err)
+	}
+	port := u.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443"}[u.Scheme]
+	}
+	resp, err := getOnce(ctx, u, ips, port, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != http.StatusOK {
+		return nil, fmt.Errorf("%s answered HTTP %d", u.Hostname(), resp.Status)
+	}
+	return resp.Body, nil
 }
 
 type rawResponse struct {
@@ -191,6 +220,8 @@ func TCPQuery(ctx context.Context, host string, port int, query string, r Resolv
 		if err == nil {
 			var b []byte
 			b, err = io.ReadAll(io.LimitReader(conn, maxBody))
+			// WHOIS has no framing: what arrived before a timeout or a reset
+			// is still the answer, from a server that did not close cleanly.
 			if err == nil || len(b) > 0 {
 				stop()
 				_ = conn.Close()

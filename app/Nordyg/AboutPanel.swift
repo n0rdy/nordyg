@@ -3,7 +3,6 @@ import AppKit
 /// Links that the About panel and the Help menu point at. One place, so the
 /// app never disagrees with itself about where things live.
 enum Links {
-    static let docs = URL(string: "https://nordyg.com/docs/")!
     static let source = URL(string: "https://github.com/n0rdy/nordyg")!
     static let discussions = URL(string: "https://github.com/n0rdy/nordyg/discussions/categories/bugs")!
     static let maker = URL(string: "https://myko.n0rdy.foo")!

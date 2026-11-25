@@ -2,7 +2,6 @@ import SwiftUI
 
 struct DNSSECView: View {
     var result: DNSSECResult?
-    @State private var selected: Int?
 
     var body: some View {
         if let r = result {
@@ -24,16 +23,16 @@ struct DNSSECView: View {
                         if let a = r.trustAnchor {
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text("trust anchor").font(.caption).foregroundStyle(.secondary)
-                                Text("KSK \(a.keyTag) · \(a.algorithmName)").font(.system(.callout, design: .monospaced))
+                                Text(verbatim: "KSK \(a.keyTag) · \(a.algorithmName)").font(.system(.callout, design: .monospaced))
                             }
                         }
                     }
 
                     Text("Chain of trust").font(.headline)
-                    ChainStrip(chain: r.chain, selected: $selected)
+                    ChainSection(chain: r.chain)
 
-                    if let i = selected ?? r.chain.indices.last, r.chain.indices.contains(i) {
-                        LinkCard(link: r.chain[i])
+                    ForEach(Array((r.related ?? []).enumerated()), id: \.offset) { _, rel in
+                        RelatedChain(related: rel)
                     }
 
                     if !r.answerSignatures.isEmpty {
@@ -47,8 +46,53 @@ struct DNSSECView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
-            ContentUnavailableView("Validation was off", systemImage: "lock.slash", description: Text("Turn on “Validate DNSSEC” and run again to see the chain of trust."))
+            ContentUnavailableView(
+                "Validation was off", systemImage: "lock.slash",
+                description: Text("Turn on “Validate DNSSEC” and run again to see the chain of trust."))
         }
+    }
+}
+
+/// A chain strip with the selected link's card under it. Each section keeps
+/// its own selection, so the related chains can be inspected independently.
+struct ChainSection: View {
+    var chain: [DNSSECLink]
+    @State private var selected: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ChainStrip(chain: chain, selected: $selected)
+            if let i = selected ?? chain.indices.last, chain.indices.contains(i) {
+                LinkCard(link: chain[i])
+            }
+        }
+        .onChange(of: chain) { selected = nil }
+    }
+}
+
+/// The chain for an answer RRset signed by another zone, under a heading that
+/// says how the answer got there.
+struct RelatedChain: View {
+    var related: DNSSECRelated
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Then").font(.headline)
+                TypeBadge(type: related.type)
+                Text(prose(related.name)).font(.system(.headline, design: .monospaced))
+                Text(verbatim: "in \(proseZone(related.signer))").font(.headline).foregroundStyle(.secondary)
+                StatusBadge(status: related.status)
+            }
+            .textSelection(.enabled)
+            if !related.reason.isEmpty {
+                Text(related.reason).font(.callout)
+                    .foregroundStyle(related.status == "bogus" ? Color.red : Color.secondary)
+                    .textSelection(.enabled)
+            }
+            ChainSection(chain: related.chain)
+        }
+        .padding(.top, 6)
     }
 }
 
@@ -90,7 +134,8 @@ struct ChainNode: View {
                     Circle().stroke(color, lineWidth: isSelected ? 3 : 1.5).frame(width: 46, height: 46)
                     Image(systemName: DNSSECStyle.icon(link.status)).foregroundStyle(color).font(.system(size: 18))
                 }
-                Text(link.zone == "." ? "root" : prose(link.zone)).font(.system(.callout, design: .monospaced).weight(.semibold)).lineLimit(1)
+                Text(link.zone == "." ? "root" : prose(link.zone)).font(.system(.callout, design: .monospaced).weight(.semibold)).lineLimit(
+                    1)
                 Text(DNSSECWording.label(link.status)).font(.caption).foregroundStyle(.secondary)
             }
             .frame(minWidth: 90)
@@ -120,7 +165,7 @@ struct LinkCard: View {
                 ForEach(Array(link.dnskeys.enumerated()), id: \.offset) { _, k in
                     HStack(spacing: 8) {
                         Pill(text: k.role.uppercased(), color: k.role == "ksk" ? .yellow : .secondary, mono: true)
-                        Text("tag \(k.keyTag) · \(k.algorithmName)").font(.system(.callout, design: .monospaced))
+                        Text(verbatim: "tag \(k.keyTag) · \(k.algorithmName)").font(.system(.callout, design: .monospaced))
                         if k.trustAnchor == true { Pill(text: "trust anchor", icon: "anchor", color: .green) }
                     }
                 }
@@ -129,9 +174,12 @@ struct LinkCard: View {
                 Text("DS from the parent").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 ForEach(Array(link.ds.enumerated()), id: \.offset) { _, d in
                     HStack(spacing: 8) {
-                        Image(systemName: d.matchesDnskey ? "checkmark.circle.fill" : "xmark.circle.fill").foregroundStyle(d.matchesDnskey ? Color.green : Color.red)
-                        Text("tag \(d.keyTag) · alg \(d.algorithm) · digest \(d.digestType)").font(.system(.callout, design: .monospaced))
-                        Text(d.matchesDnskey ? "matches a key" : "matches nothing").font(.callout).foregroundStyle(d.matchesDnskey ? Color.secondary : Color.red)
+                        Image(systemName: d.matchesDnskey ? "checkmark.circle.fill" : "xmark.circle.fill").foregroundStyle(
+                            d.matchesDnskey ? Color.green : Color.red)
+                        Text(verbatim: "tag \(d.keyTag) · alg \(d.algorithm) · digest \(d.digestType)").font(
+                            .system(.callout, design: .monospaced))
+                        Text(d.matchesDnskey ? "matches a key" : "matches nothing").font(.callout).foregroundStyle(
+                            d.matchesDnskey ? Color.secondary : Color.red)
                     }
                 }
             }
@@ -140,10 +188,7 @@ struct LinkCard: View {
                 ForEach(Array(link.signatures.enumerated()), id: \.offset) { _, s in SignatureRow(sig: s) }
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .card()
     }
 }
 
@@ -153,8 +198,8 @@ struct SignatureRow: View {
         HStack(spacing: 6) {
             Image(systemName: sig.valid ? "checkmark.seal.fill" : "xmark.seal.fill").foregroundStyle(sig.valid ? Color.green : Color.red)
             TypeBadge(type: sig.typeCovered)
-            Text("\(prose(sig.name)) signed by \(prose(sig.signer)) key \(sig.keyTag), \(expires)")
-            if let e = sig.error { Text("— \(e)").foregroundStyle(.red) }
+            Text(verbatim: "\(prose(sig.name)) signed by \(prose(sig.signer)) key \(sig.keyTag), \(expires)")
+            if let e = sig.error { Text(verbatim: "· \(e)").foregroundStyle(.red) }
         }
         .font(.system(.callout, design: .monospaced))
         .textSelection(.enabled)

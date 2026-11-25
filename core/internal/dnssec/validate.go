@@ -7,6 +7,10 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+
+	"github.com/n0rdy/nordyg/core/internal/contract"
+	"github.com/n0rdy/nordyg/core/internal/msg"
+	"github.com/n0rdy/nordyg/core/internal/prose"
 )
 
 // Fetcher obtains a DNS message for (name, type) with DO set. Recursive and
@@ -15,22 +19,14 @@ type Fetcher interface {
 	Fetch(ctx context.Context, name string, qtype uint16) (*dns.Msg, error)
 }
 
-// Validator holds the trust anchors and the clock.
+// Validator holds the trust anchors.
 type Validator struct {
 	Anchors []*dns.DS
-	Now     func() time.Time
 }
 
 // New returns a validator with the embedded root anchors.
 func New() *Validator {
 	return &Validator{Anchors: RootAnchors()}
-}
-
-func (v *Validator) now() time.Time {
-	if v.Now != nil {
-		return v.Now()
-	}
-	return time.Now()
 }
 
 const maxNested = 3
@@ -52,7 +48,7 @@ type walker struct {
 }
 
 func (v *Validator) validate(ctx context.Context, f Fetcher, qname string, qtype uint16, answer *dns.Msg, depth int) (*Result, error) {
-	w := &walker{v: v, f: f, now: v.now(), res: &Result{Status: Indeterminate, Chain: []Link{}, AnswerSignatures: []Signature{}}}
+	w := &walker{v: v, f: f, now: time.Now(), res: &Result{Status: Indeterminate, Chain: []Link{}, AnswerSignatures: []Signature{}, Related: []Related{}}}
 	if err := w.root(ctx); err != nil {
 		return w.res, ctxErr(ctx, err)
 	}
@@ -116,18 +112,26 @@ func (w *walker) root(ctx context.Context) error {
 		return nil
 	}
 	set := findSet(rrsets(m.Answer), ".", dns.TypeDNSKEY)
-	sigs, ok := verifySet(set, anchored, ".", w.now)
+	sigs, sig := verifySetSig(set, anchored, ".", w.now)
 	link.Signatures = sigs
-	if !ok {
-		link.Reason = "root DNSKEY RRset is not signed by the trust anchor key"
+	if sig == nil {
+		link.Reason = "root DNSKEY RRset is not validly signed by the trust anchor key: " + firstError(sigs)
 		w.res.Chain = append(w.res.Chain, link)
 		w.fail(Bogus, link.Reason)
 		return nil
 	}
 	link.Status = Secure
 	w.res.Chain = append(w.res.Chain, link)
+	// Report the anchored key that actually signed. During a rollover both
+	// KSKs match an anchor while only one signs (KSK-2024 from 2026-10-11).
 	a := anchored[0]
-	w.res.TrustAnchor = &KeyRef{KeyTag: a.KeyTag(), Algorithm: a.Algorithm, AlgorithmName: algName(a.Algorithm), Role: role(a.Flags), TrustAnchor: true}
+	for _, k := range anchored {
+		if k.KeyTag() == sig.KeyTag && k.Algorithm == sig.Algorithm {
+			a = k
+			break
+		}
+	}
+	w.res.TrustAnchor = &KeyRef{KeyTag: a.KeyTag(), Algorithm: a.Algorithm, AlgorithmName: msg.AlgName(a.Algorithm), Role: msg.KeyRole(a.Flags), TrustAnchor: true}
 	w.zone, w.keys = ".", keys
 	return nil
 }
@@ -153,14 +157,18 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 			switch p.kind {
 			case proofNoData:
 				if p.delegation {
-					reason := "unsigned delegation: no DS record for " + prose(cand) + ", proven by an NSEC record in " + proseZone(w.zone)
+					record := "NSEC"
+					if p.nsec3 {
+						record = "NSEC3"
+					}
+					reason := "unsigned delegation: no DS record for " + prose.Name(cand) + ", proven by an " + record + " record in " + prose.Zone(w.zone)
 					w.res.Chain = append(w.res.Chain, Link{Zone: cand, Status: Insecure, Reason: reason, DNSKeys: []KeyRef{}, DS: []DSRef{}, Signatures: p.signatures})
 					w.fail(Insecure, reason)
 					return nil
 				}
 				// Not a zone cut; keep descending in the same zone.
 			case proofOptOut:
-				reason := "unsigned delegation: no DS record for " + prose(cand) + ", proven by an NSEC3 opt-out record in " + proseZone(w.zone) + " (RFC 5155)"
+				reason := "unsigned delegation: no DS record for " + prose.Name(cand) + ", proven by an NSEC3 opt-out record in " + prose.Zone(w.zone) + " (RFC 5155)"
 				w.res.Chain = append(w.res.Chain, Link{Zone: cand, Status: Insecure, Reason: reason, DNSKeys: []KeyRef{}, DS: []DSRef{}, Signatures: p.signatures})
 				w.fail(Insecure, reason)
 				return nil
@@ -168,10 +176,10 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 				// The name does not exist; nothing below it can be a cut.
 				return nil
 			case proofBogus:
-				w.fail(Bogus, "denial of DS for "+cand+": "+p.reason)
+				w.fail(Bogus, "denial of DS for "+prose.Name(cand)+": "+p.reason)
 				return nil
 			default:
-				w.fail(Indeterminate, "cannot prove whether "+cand+" has a DS record: "+p.reason)
+				w.fail(Indeterminate, "cannot prove whether "+prose.Name(cand)+" has a DS record: "+p.reason)
 				return nil
 			}
 			continue
@@ -181,7 +189,7 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 		sigs, ok := verifySet(dsSet, w.keys, w.zone, w.now)
 		link.Signatures = append(link.Signatures, sigs...)
 		if !ok {
-			link.Reason = "DS RRset for " + cand + " is not validly signed by " + w.zone
+			link.Reason = "DS RRset for " + prose.Name(cand) + " is not validly signed by " + prose.Zone(w.zone) + ": " + firstError(sigs)
 			w.res.Chain = append(w.res.Chain, link)
 			w.fail(Bogus, link.Reason)
 			return nil
@@ -197,13 +205,13 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 		link.DNSKeys = keyRefs(keys, nil)
 		if !supported {
 			link.Status = Insecure
-			link.Reason = "DS records use only unsupported algorithms; treated as unsigned (RFC 4035 §5.2)"
+			link.Reason = "DS records use only unsupported algorithms, so the zone counts as unsigned (RFC 4035 §5.2)"
 			w.res.Chain = append(w.res.Chain, link)
 			w.fail(Insecure, link.Reason)
 			return nil
 		}
 		if len(matched) == 0 {
-			link.Reason = "no DNSKEY of " + cand + " matches its DS records"
+			link.Reason = "no DNSKEY of " + prose.Name(cand) + " matches its DS records"
 			w.res.Chain = append(w.res.Chain, link)
 			w.fail(Bogus, link.Reason)
 			return nil
@@ -212,7 +220,7 @@ func (w *walker) walk(ctx context.Context, qname string, answer *dns.Msg) error 
 		ksigs, ok := verifySet(keySet, matched, cand, w.now)
 		link.Signatures = append(link.Signatures, ksigs...)
 		if !ok {
-			link.Reason = "DNSKEY RRset of " + cand + " is not signed by a key matching its DS"
+			link.Reason = "DNSKEY RRset of " + prose.Name(cand) + " is not validly signed by a key matching its DS: " + firstError(ksigs)
 			w.res.Chain = append(w.res.Chain, link)
 			w.fail(Bogus, link.Reason)
 			return nil
@@ -253,6 +261,9 @@ func (w *walker) answer(ctx context.Context, qname string, qtype uint16, m *dns.
 	status := Secure
 	reason := ""
 	for _, s := range sets {
+		if dnameSynthesized(s, sets) {
+			continue
+		}
 		signer := ""
 		if len(s.sigs) > 0 {
 			signer = strings.ToLower(s.sigs[0].SignerName)
@@ -261,10 +272,20 @@ func (w *walker) answer(ctx context.Context, qname string, qtype uint16, m *dns.
 		case len(s.sigs) == 0:
 			status, reason = Bogus, "RRset "+s.name+" "+dns.TypeToString[s.typ]+" has no RRSIG although "+w.zone+" is signed"
 		case strings.EqualFold(signer, w.zone):
-			sigs, ok := verifySet(s, w.keys, w.zone, w.now)
+			sigs, sig := verifySetSig(s, w.keys, w.zone, w.now)
 			w.res.AnswerSignatures = append(w.res.AnswerSignatures, sigs...)
-			if !ok && status == Secure {
-				status, reason = Bogus, "RRset "+s.name+" "+dns.TypeToString[s.typ]+" fails verification: "+firstError(sigs)
+			if sig == nil {
+				if status == Secure {
+					status, reason = Bogus, "RRset "+s.name+" "+dns.TypeToString[s.typ]+" fails verification: "+firstError(sigs)
+				}
+				continue
+			}
+			if wild := wildcardOwner(s.name, sig); wild != "" {
+				st, why, psigs := wildcardProof(m, s.name, wild, w.keys, w.zone, w.now)
+				w.res.AnswerSignatures = append(w.res.AnswerSignatures, psigs...)
+				if st != Secure && (status == Secure || st == Bogus) {
+					status, reason = st, why
+				}
 			}
 		default:
 			// Signed by a different zone (CNAME chain into another zone):
@@ -275,11 +296,20 @@ func (w *walker) answer(ctx context.Context, qname string, qtype uint16, m *dns.
 			}
 			sub := new(dns.Msg)
 			sub.Answer = append(append([]dns.RR{}, s.rrs...), sigsToRR(s.sigs)...)
+			// The authority section may carry that zone's wildcard proof.
+			sub.Ns = m.Ns
 			r, err := w.v.validate(ctx, w.f, s.name, s.typ, sub, depth+1)
 			if err != nil {
 				return err
 			}
 			w.res.AnswerSignatures = append(w.res.AnswerSignatures, r.AnswerSignatures...)
+			w.res.Related = append(w.res.Related, Related{
+				Name: s.name, Type: contract.TypeToString(s.typ), Signer: signer,
+				Status: r.Status, Reason: r.Reason, Chain: r.Chain,
+			})
+			// Chains nested further down (a CNAME chain through three zones)
+			// are reported flat, in answer order.
+			w.res.Related = append(w.res.Related, r.Related...)
 			if r.Status != Secure && (status == Secure || r.Status == Bogus) {
 				status, reason = r.Status, s.name+": "+r.Reason
 			}
@@ -287,6 +317,34 @@ func (w *walker) answer(ctx context.Context, qname string, qtype uint16, m *dns.
 	}
 	w.fail(status, reason)
 	return nil
+}
+
+// dnameSynthesized reports whether s is the unsigned CNAME a server
+// synthesises from a DNAME in the same answer (RFC 6672 §5.3.3). It carries
+// no RRSIG; the DNAME it follows from is validated in its place.
+func dnameSynthesized(s *rrset, sets []*rrset) bool {
+	if s.typ != dns.TypeCNAME || len(s.sigs) > 0 || len(s.rrs) != 1 {
+		return false
+	}
+	target := dns.Fqdn(strings.ToLower(s.rrs[0].(*dns.CNAME).Target))
+	for _, d := range sets {
+		if d.typ != dns.TypeDNAME || len(d.sigs) == 0 || len(d.rrs) != 1 {
+			continue
+		}
+		if !dns.IsSubDomain(d.name, s.name) || strings.EqualFold(d.name, s.name) {
+			continue
+		}
+		prefix := strings.TrimSuffix(s.name, d.name)
+		to := dns.Fqdn(strings.ToLower(d.rrs[0].(*dns.DNAME).Target))
+		want := prefix + to
+		if to == "." {
+			want = prefix
+		}
+		if want == target {
+			return true
+		}
+	}
+	return false
 }
 
 // negative validates an NXDOMAIN or NODATA answer via its denial records.
@@ -324,24 +382,4 @@ func sigsToRR(sigs []*dns.RRSIG) []dns.RR {
 		out = append(out, s)
 	}
 	return out
-}
-
-// prose renders a name for human-readable messages: no trailing dot.
-func prose(name string) string {
-	if name == "." {
-		return "the root"
-	}
-	return strings.TrimSuffix(name, ".")
-}
-
-// proseZone renders a zone for prose so a TLD does not read like a word:
-// "." → "the root zone", "me." → "the .me zone", "example.com." → "the zone example.com".
-func proseZone(zone string) string {
-	switch dns.CountLabel(zone) {
-	case 0:
-		return "the root zone"
-	case 1:
-		return "the ." + strings.TrimSuffix(zone, ".") + " zone"
-	}
-	return "the zone " + strings.TrimSuffix(zone, ".")
 }

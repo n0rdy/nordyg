@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/miekg/dns"
+
 	"github.com/n0rdy/nordyg/core/internal/bridge"
 	"github.com/n0rdy/nordyg/core/internal/contract"
 	"github.com/n0rdy/nordyg/core/internal/testdns"
@@ -86,6 +88,7 @@ func TestGoodDomain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testdns.Sample(t, "email", res)
 	if res.Overall.Status != OK {
 		t.Fatalf("overall %+v\nmx %+v\nspf %+v\ndkim %+v\ndmarc %+v\nsts %+v\nbimi %+v\ndnsbl %+v", res.Overall, res.MX.Verdict, res.SPF.Verdict, res.DKIM.Verdict, res.DMARC.Verdict, res.MTASTS.Verdict, res.BIMI.Verdict, res.DNSBL.Verdict)
 	}
@@ -145,7 +148,8 @@ func TestBadDomain(t *testing.T) {
 	if res.DKIM.Verdict.Status != Fail || !strings.Contains(res.DKIM.Verdict.Message, "revoked") || len(res.DKIM.Selectors) != 2 {
 		t.Fatalf("dkim: %+v", res.DKIM)
 	}
-	if res.MX.Verdict.Status != Warn || !strings.Contains(res.MX.Verdict.Message, "reverse") {
+	// Reverse records matter for senders, not for MX hosts: info, not warn.
+	if res.MX.Verdict.Status != Info || !strings.Contains(res.MX.Verdict.Message, "Reverse (PTR) records are missing") || !strings.Contains(res.MX.Verdict.Message, "1 MX host resolves") {
 		t.Fatalf("mx: %+v", res.MX.Verdict)
 	}
 	if res.DNSBL.Verdict.Status != Fail || !res.DNSBL.Checks[0].Listed || res.DNSBL.Checks[0].Response != "127.0.0.2" {
@@ -157,21 +161,42 @@ func TestBadDomain(t *testing.T) {
 }
 
 func TestSPFLookupLimit(t *testing.T) {
-	op, ep := newOp(t)
+	op, _ := newOp(t)
 	addr := testdns.UDP(t, testdns.Zone(t,
 		"many.test. 300 IN TXT \"v=spf1 include:a.test include:b.test include:c.test include:d.test include:e.test include:f.test include:g.test include:h.test include:i.test include:j.test include:k.test ~all\"",
+		"a.test. 300 IN TXT \"v=spf1 ip4:192.0.2.1 -all\"", "b.test. 300 IN TXT \"v=spf1 ip4:192.0.2.2 -all\"",
+		"c.test. 300 IN TXT \"v=spf1 ip4:192.0.2.3 -all\"", "d.test. 300 IN TXT \"v=spf1 ip4:192.0.2.4 -all\"",
+		"e.test. 300 IN TXT \"v=spf1 ip4:192.0.2.5 -all\"", "f.test. 300 IN TXT \"v=spf1 ip4:192.0.2.6 -all\"",
+		"g.test. 300 IN TXT \"v=spf1 ip4:192.0.2.7 -all\"", "h.test. 300 IN TXT \"v=spf1 ip4:192.0.2.8 -all\"",
+		"i.test. 300 IN TXT \"v=spf1 ip4:192.0.2.9 -all\"", "j.test. 300 IN TXT \"v=spf1 ip4:192.0.2.10 -all\"",
+		"k.test. 300 IN TXT \"v=spf1 ip4:192.0.2.11 -all\"",
 	))
-	_ = ep
 	res, err := op.Run(context.Background(), Params{Domain: "many.test", Endpoint: contract.Endpoint{Transport: "udp", Address: addr}, DKIMSelectors: []string{"x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Includes fail to resolve (NXDOMAIN): reported as fail on the first unresolved include.
-	if res.SPF.Verdict.Status != Fail || len(res.SPF.Includes) != 11 {
-		t.Fatalf("spf: %+v (%d includes)", res.SPF.Verdict, len(res.SPF.Includes))
+	// Every include resolves, so the only thing wrong is their number.
+	if res.SPF.Verdict.Status != Fail || !strings.Contains(res.SPF.Verdict.Message, "over the limit of 10") || res.SPF.TotalLookups != 11 {
+		t.Fatalf("spf: %+v (%d lookups)", res.SPF.Verdict, res.SPF.TotalLookups)
 	}
-	if res.SPF.TotalLookups != 11 {
-		t.Fatalf("total lookups %d", res.SPF.TotalLookups)
+}
+
+func TestFailedLookupsAreNotMissingRecords(t *testing.T) {
+	op, _ := newOp(t)
+	addr := testdns.UDP(t, func(q *dns.Msg) *dns.Msg {
+		m := new(dns.Msg)
+		return m.SetRcode(q, dns.RcodeServerFailure)
+	})
+	res, err := op.Run(context.Background(), Params{Domain: "broken.test", Endpoint: contract.Endpoint{Transport: "udp", Address: addr}, DKIMSelectors: []string{"x", "y"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A resolver that cannot answer says nothing about the domain's mail setup.
+	if v := res.MX.Verdict; v.Status != Fail || v.Message != "MX lookup failed: SERVFAIL" {
+		t.Errorf("mx: %+v", v)
+	}
+	if v := res.DKIM.Verdict; v.Status != Fail || v.Message != "TXT lookup failed: SERVFAIL" {
+		t.Errorf("dkim: %+v", v)
 	}
 }
 
@@ -229,5 +254,73 @@ func TestCancel(t *testing.T) {
 	_, err := op.Run(ctx, Params{Domain: "good.test", Endpoint: contract.Endpoint{Transport: "udp", Address: addr}})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("want cancelled, got %v", err)
+	}
+}
+
+func TestMXLookupFailureIsNotUnresolvable(t *testing.T) {
+	op, _ := newOp(t)
+	// A resolver that answers the MX query but never the host's address
+	// queries: the host could not be checked, which is not the same as it
+	// having no address.
+	zone := testdns.Zone(t, "flaky.test. 300 IN MX 10 mx.flaky.test.")
+	addr := testdns.UDP(t, func(q *dns.Msg) *dns.Msg {
+		if strings.EqualFold(q.Question[0].Name, "mx.flaky.test.") {
+			return nil
+		}
+		return zone(q)
+	})
+	res, err := op.Run(context.Background(), Params{Domain: "flaky.test", Endpoint: contract.Endpoint{Transport: "udp", Address: addr}, Options: contract.Options{TimeoutMS: 200}, DKIMSelectors: []string{"x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.MX.Verdict.Status != Warn || !strings.Contains(res.MX.Verdict.Message, "could not be looked up") {
+		t.Fatalf("mx: %+v", res.MX.Verdict)
+	}
+}
+
+func TestDeclinationsAndMailLessDomains(t *testing.T) {
+	op, _ := newOp(t)
+	addr := testdns.UDP(t, testdns.Zone(t,
+		// A domain that neither sends nor receives mail, locked down the
+		// way example.com is: null MX, -all, DMARC reject, wildcard revoked DKIM.
+		"nomail.test. 300 IN MX 0 .",
+		"nomail.test. 300 IN TXT \"v=spf1 -all\"",
+		"_dmarc.nomail.test. 300 IN TXT \"v=DMARC1; p=reject\"",
+		"a._domainkey.nomail.test. 300 IN TXT \"v=DKIM1; p=\"",
+		"b._domainkey.nomail.test. 300 IN TXT \"v=DKIM1; p=\"",
+		"default._bimi.nomail.test. 300 IN TXT \"v=BIMI1; l=; a=;\"",
+		// Google-style SPF that ends through a redirect.
+		"redir.test. 300 IN TXT \"v=spf1 redirect=_spf.redir.test\"",
+		"_spf.redir.test. 300 IN TXT \"v=spf1 ip4:192.0.2.0/24 ~all\"",
+	))
+	ep := contract.Endpoint{Transport: "udp", Address: addr}
+	res, err := op.Run(context.Background(), Params{Domain: "nomail.test", Endpoint: ep, DKIMSelectors: []string{"a", "b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.DKIM.Wildcard || res.DKIM.Verdict.Status != OK {
+		t.Errorf("dkim: %+v", res.DKIM.Verdict)
+	}
+	if res.BIMI.Verdict.Status != Info || !strings.Contains(res.BIMI.Verdict.Message, "declined") {
+		t.Errorf("bimi: %+v", res.BIMI.Verdict)
+	}
+	if !strings.Contains(res.SPF.Verdict.Message, "no server may send") {
+		t.Errorf("spf: %+v", res.SPF.Verdict)
+	}
+	if res.DMARC.Verdict.Status == Warn {
+		t.Errorf("dmarc on a mail-less domain: %+v", res.DMARC.Verdict)
+	}
+	if res.Overall.Status != OK || !strings.Contains(res.Overall.Message, "null MX") {
+		t.Errorf("overall: %+v", res.Overall)
+	}
+	res, err = op.Run(context.Background(), Params{Domain: "redir.test", Endpoint: ep, DKIMSelectors: []string{"x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.SPF.Verdict.Message, "hands the rest to _spf.redir.test") {
+		t.Errorf("redirect spf: %+v", res.SPF.Verdict)
+	}
+	if res.DKIM.Verdict.Status != Info {
+		t.Errorf("no dkim found should be info: %+v", res.DKIM.Verdict)
 	}
 }

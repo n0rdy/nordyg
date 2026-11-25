@@ -1,10 +1,9 @@
-// Package compare implements the "compare" op (contract §5): the same question
+// Package compare implements the "compare" op: the same question
 // to several endpoints at once, grouped by answer so disagreement stands out.
 package compare
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"sort"
 	"strconv"
@@ -59,13 +58,7 @@ type Op struct {
 
 // Register attaches the op to d.
 func (op *Op) Register(d *bridge.Dispatcher) {
-	d.Register("compare", func(ctx context.Context, raw json.RawMessage) (any, error) {
-		var p Params
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return nil, &bridge.Error{Code: bridge.CodeBadRequest, Message: "params: " + err.Error()}
-		}
-		return op.Run(ctx, p)
-	})
+	d.Register("compare", bridge.Typed(op.Run))
 }
 
 // Run queries every endpoint concurrently and groups the outcomes.
@@ -91,10 +84,10 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 	var wg sync.WaitGroup
 	for i, ep := range p.Endpoints {
 		wg.Add(1)
-		go func(i int, ep contract.Endpoint) {
+		go func() {
 			defer wg.Done()
 			entries[i] = op.one(ctx, p, ep)
-		}(i, ep)
+		}()
 	}
 	wg.Wait()
 	if ctx.Err() != nil {
@@ -103,7 +96,15 @@ func (op *Op) Run(ctx context.Context, p Params) (*Result, error) {
 
 	out := &Result{QuestionSent: r.Question(), Results: entries}
 	out.Groups = group(entries)
-	out.Consistent = len(out.Groups) == 1 && out.Groups[0].Key != ErrorKey
+	// Consistent means every resolver that answered agrees; resolvers that
+	// failed are reported in the error group, not counted as disagreeing.
+	answered := 0
+	for _, g := range out.Groups {
+		if g.Key != ErrorKey {
+			answered++
+		}
+	}
+	out.Consistent = answered == 1
 	return out, nil
 }
 
@@ -123,10 +124,15 @@ func (op *Op) one(ctx context.Context, p Params, ep contract.Endpoint) Entry {
 }
 
 // Key computes the grouping key for a message: rcode plus the sorted set of
-// "TYPE rdata" strings from the answer section. TTLs and order are ignored.
+// "TYPE rdata" strings from the answer section. TTLs, order and RRSIGs are
+// ignored: signatures differ per fetch (on-the-fly signers make a new one for
+// every response), so they would split resolvers that agree on the data.
 func Key(m *contract.Message) (key string, answers []string) {
 	answers = make([]string, 0, len(m.Answer))
 	for _, rr := range m.Answer {
+		if rr.Type == "RRSIG" {
+			continue
+		}
 		answers = append(answers, rr.Type+" "+rr.Rdata)
 	}
 	sort.Strings(answers)
@@ -182,6 +188,9 @@ func group(entries []Entry) []Group {
 func rdataOnly(m *contract.Message) []string {
 	out := make([]string, 0, len(m.Answer))
 	for _, rr := range m.Answer {
+		if rr.Type == "RRSIG" {
+			continue
+		}
 		out = append(out, rr.Rdata)
 	}
 	sort.Strings(out)

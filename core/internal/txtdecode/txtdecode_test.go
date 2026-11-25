@@ -124,8 +124,10 @@ func TestDKIM(t *testing.T) {
 		t.Fatalf("%+v", d.Problems)
 	}
 	// Multi-string records are joined before parsing.
-	if got := Decode("s1._domainkey.example.test.", []string{"v=DKIM1; k=rsa; p=" + rsaKeyB64(t, 2048)[:40], rsaKeyB64(t, 2048)[40:]}); got == nil {
-		t.Fatal("split record not decoded")
+	key := rsaKeyB64(t, 2048)
+	split, ok := Decode("s1._domainkey.example.test.", []string{"v=DKIM1; k=rsa; p=" + key[:40], key[40:]}).(*DKIM)
+	if !ok || split.KeyBits != 2048 || len(split.Problems) != 0 {
+		t.Fatalf("split record: %+v", split)
 	}
 }
 

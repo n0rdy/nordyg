@@ -2,35 +2,35 @@
 import Site from '../layouts/Site.astro';
 ---
 <Site title="Privacy, Nordyg" description="What Nordyg connects to, what it stores, and what it does not do.">
-  <article class="prose wrap">
+  <article class="prose">
     <h1>Privacy</h1>
-    <p>Nordyg is a DNS client. Its whole job is to send questions to servers and show you the answers, so this page lists exactly which servers those are. It also serves as the privacy policy for the Mac App Store listing.</p>
+    <p>Nordyg is a DNS client. Its whole job is to send questions to servers and show you the answers, so this page lists exactly which servers those are.</p>
 
     <h2>What the app connects to</h2>
     <ul>
-      <li>The DNS resolvers you choose, over UDP, TCP, DNS over TLS, DNS over HTTPS or DNS over QUIC. The presets are public resolvers run by Cloudflare, Google, Quad9, NextDNS, AdGuard and Mullvad. You can add your own.</li>
-      <li>The root servers and each zone's authoritative servers, when you run a trace or when DNSSEC validation needs keys the resolver did not provide.</li>
-      <li>Registries' and registrars' RDAP servers, and for country-code domains without RDAP, <code>whois.iana.org</code> and the registry's WHOIS server, when you use registry mode.</li>
-      <li><code>data.iana.org</code>, once per launch the first time registry mode is used, to refresh the list of RDAP servers.</li>
-      <li><code>mta-sts.&lt;domain&gt;</code> over HTTPS, when the email report checks a domain that publishes an MTA-STS policy.</li>
-      <li>The blocklist zones of Spamhaus, SpamCop and Barracuda, queried as ordinary DNS through your chosen resolver, in the email report.</li>
+      <li>The DNS resolvers you choose, over UDP, TCP, DNS over TLS, DNS over HTTPS or DNS over QUIC. The presets are public resolvers run by Cloudflare, Google, Quad9, NextDNS and AdGuard. You can add your own.</li>
+      <li>The root servers and a zone's own nameservers, when you run a trace or a zone check, or when DNSSEC validation needs keys the resolver did not provide.</li>
+      <li>In a zone check, the web servers of the domain and its www name on port 443, to read the certificates they present, and the certificate authorities' revocation lists named in those certificates.</li>
+      <li>In the email report, <code>mta-sts.&lt;domain&gt;</code> over HTTPS when the domain publishes an MTA-STS policy, and the domain's mail servers on port 25 when they publish signed DANE records, to compare their certificates with those records. The blocklists of Spamhaus, SpamCop and Barracuda are asked as ordinary DNS through your resolver.</li>
+      <li>In registry mode, registries' and registrars' RDAP servers, or for domains without RDAP, <code>whois.iana.org</code> and the registry's WHOIS server. <code>data.iana.org</code> is asked once per launch for the list of RDAP servers.</li>
+      <li>GitHub, to check for updates when you allow automatic checks or choose Check for Updates, and to download a new version when you install one. The request names the app and its version, nothing more.</li>
     </ul>
-    <p>Nordyg never contacts a server of mine. There is no account, no sign-in, no telemetry, no crash reporting and no update check. Updates come from the Mac App Store or from building a newer source tree. I cannot see what you look up, and I don't want to.</p>
+    <p>Nordyg never contacts a server of mine. There is no account, no sign-in, no telemetry and no crash reporting. I cannot see what you look up, and I don't want to.</p>
 
     <h2>What the app stores</h2>
     <ul>
-      <li>Your query history, pinned queries and watches, as files inside the app's own sandbox container on your Mac.</li>
+      <li>Your query history, pinned queries and watches, in files inside the app's own sandbox container on your Mac.</li>
       <li>Custom resolvers you add.</li>
     </ul>
-    <p>Nothing leaves your Mac except the DNS, RDAP, WHOIS and HTTPS requests described above, sent to the servers you or the DNS point at.</p>
+    <p>The app runs in the macOS sandbox. It can make network connections and use its own container, and nothing else: it cannot read your files or other apps' data.</p>
 
     <h2>The system resolver</h2>
-    <p>Nordyg reads which resolvers macOS is configured to use, per network interface, so it can offer them in the picker and use them to look up DNS over HTTPS hosts. It does not send queries through the system resolver itself, except for the optional "what this Mac sees" comparison, which asks the system resolver for the same name you just queried.</p>
+    <p>Nordyg reads which resolvers macOS uses, per network interface, to offer them in the resolver menu and to show how this Mac resolves names. It does not send its own queries through the system resolver, except for the "your Mac sees" comparison, which asks the system resolver for the name you just looked up.</p>
 
     <h2>This website</h2>
     <p>nordyg.com is a static site. It loads no analytics, no third-party scripts and no fonts from other hosts. The hosting provider keeps standard server logs, which I don't look at.</p>
 
-    <h2>Contact</h2>
-    <p>Questions about this? Ask in the <a href="https://github.com/n0rdy/nordyg/discussions/categories/bugs">Discussions</a> on GitHub. The App Store listing is registered to my company, Do Not Panic AS, in Norway.</p>
+    <h2>Questions</h2>
+    <p>Ask in <a href="https://github.com/n0rdy/nordyg/discussions">Discussions</a> on GitHub.</p>
   </article>
 </Site>

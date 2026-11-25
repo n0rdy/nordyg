@@ -6,7 +6,7 @@ struct WatchEvent: Codable, Identifiable, Hashable {
     var id = UUID()
     var date: Date
     var rcode: String
-    var answers: [String]      // sorted "TYPE rdata"
+    var answers: [String]  // sorted "TYPE rdata"
     var changed: Bool
     var error: String?
 }
@@ -18,7 +18,7 @@ struct Watch: Codable, Identifiable, Hashable {
     var intervalSeconds: Int
     var created = Date()
     var paused = false
-    var unread = false            // a change happened since the watch was last viewed
+    var unread = false  // a change happened since the watch was last viewed
     var events: [WatchEvent] = []
 
     var title: String { "\(question.name) \(question.type)" }
@@ -76,7 +76,12 @@ final class WatchCenter: ObservableObject {
         guard let i = index(id) else { return }
         watches[i].paused = paused
         save()
-        if paused { loops[id]?.cancel(); loops[id] = nil } else { start(id) }
+        if paused {
+            loops[id]?.cancel()
+            loops[id] = nil
+        } else {
+            start(id)
+        }
     }
 
     func setInterval(_ id: UUID, _ seconds: Int) {
@@ -115,9 +120,14 @@ final class WatchCenter: ObservableObject {
         guard let w = watches.first(where: { $0.id == id }) else { return }
         var event = WatchEvent(date: Date(), rcode: "", answers: [], changed: false)
         do {
-            let r: QueryResult = try await core.call("query", QueryParams(question: w.question, endpoint: w.endpoint, options: Options(timeoutMs: 5000), validate: false, bootstrap: bootstrap()))
+            let r: QueryResult = try await core.call(
+                "query",
+                QueryParams(
+                    question: w.question, endpoint: w.endpoint, options: Options(timeoutMs: 5000), validate: false, bootstrap: bootstrap()))
             event.rcode = r.message.rcode
-            event.answers = r.message.answer.map { "\($0.type) \($0.rdata)" }.sorted()
+            // RRSIGs are left out: on-the-fly signers (Cloudflare) issue a new
+            // signature per response, which would look like a change every check.
+            event.answers = r.message.answer.filter { $0.type != "RRSIG" }.map { "\($0.type) \($0.rdata)" }.sorted()
         } catch let e as CoreError {
             event.error = e.message
         } catch {
@@ -162,23 +172,8 @@ final class WatchCenter: ObservableObject {
 }
 
 enum WatchStore {
-    static var url: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = base.appendingPathComponent("Nordyg", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("watches.json")
-    }
+    private static let url = SavedList.file("watches.json")
 
-    static func load() -> [Watch] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
-        return (try? d.decode([Watch].self, from: data)) ?? []
-    }
-
-    static func save(_ items: [Watch]) {
-        let e = JSONEncoder()
-        e.dateEncodingStrategy = .iso8601
-        if let data = try? e.encode(items) { try? data.write(to: url, options: .atomic) }
-    }
+    static func load() -> [Watch] { SavedList.load(url) }
+    static func save(_ items: [Watch]) { SavedList.save(items, to: url) }
 }

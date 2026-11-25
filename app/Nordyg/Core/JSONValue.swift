@@ -12,12 +12,30 @@ enum JSONValue: Codable, Hashable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
-        if c.decodeNil() { self = .null; return }
-        if let b = try? c.decode(Bool.self) { self = .bool(b); return }
-        if let n = try? c.decode(Double.self) { self = .number(n); return }
-        if let s = try? c.decode(String.self) { self = .string(s); return }
-        if let a = try? c.decode([JSONValue].self) { self = .array(a); return }
-        if let o = try? c.decode([String: JSONValue].self) { self = .object(o); return }
+        if c.decodeNil() {
+            self = .null
+            return
+        }
+        if let b = try? c.decode(Bool.self) {
+            self = .bool(b)
+            return
+        }
+        if let n = try? c.decode(Double.self) {
+            self = .number(n)
+            return
+        }
+        if let s = try? c.decode(String.self) {
+            self = .string(s)
+            return
+        }
+        if let a = try? c.decode([JSONValue].self) {
+            self = .array(a)
+            return
+        }
+        if let o = try? c.decode([String: JSONValue].self) {
+            self = .object(o)
+            return
+        }
         throw DecodingError.dataCorruptedError(in: c, debugDescription: "unsupported JSON value")
     }
 
@@ -45,9 +63,18 @@ enum JSONValue: Codable, Hashable {
         }
     }
 
-    var stringValue: String? { if case .string(let s) = self { return s }; return nil }
-    var arrayValue: [JSONValue]? { if case .array(let a) = self { return a }; return nil }
-    var objectValue: [String: JSONValue]? { if case .object(let o) = self { return o }; return nil }
+    var stringValue: String? {
+        if case .string(let s) = self { return s }
+        return nil
+    }
+    var arrayValue: [JSONValue]? {
+        if case .array(let a) = self { return a }
+        return nil
+    }
+    var objectValue: [String: JSONValue]? {
+        if case .object(let o) = self { return o }
+        return nil
+    }
     subscript(key: String) -> JSONValue? { objectValue?[key] }
 
     /// Pretty-printed JSON text.

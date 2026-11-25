@@ -1,8 +1,9 @@
 import Foundation
 import NordygCore
 
-/// Error surfaced by the core or by the bridge itself.
-struct CoreError: Error, LocalizedError {
+/// The contract's error object. `Core.call` throws it, and a compare result
+/// carries one for each resolver that failed.
+struct CoreError: Codable, Hashable, Error, LocalizedError {
     var code: String
     var message: String
     var details: JSONValue?
@@ -19,12 +20,12 @@ private struct Envelope<R: Decodable>: Decodable {
     var id: String
     var ok: Bool
     var result: R?
-    var error: BridgeError?
+    var error: CoreError?
 }
 
 /// The only place that touches the C surface. Calls block a background
 /// thread; Swift cancellation maps to NordygCancel.
-final class Core: @unchecked Sendable {
+final class Core: Sendable {
     static let shared = Core()
 
     private let queue = DispatchQueue(label: "foo.n0rdy.nordyg.core", qos: .userInitiated, attributes: .concurrent)
@@ -43,7 +44,11 @@ final class Core: @unchecked Sendable {
         let id = UUID().uuidString
         let body = try encoder.encode(Request(id: id, op: op, params: params))
         return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<R, Error>) in
+            // A task that is already cancelled never reaches the core. A
+            // cancel that lands after this check, before the core has seen
+            // the request, is remembered there and refuses it on arrival.
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<R, Error>) in
                 queue.async {
                     cont.resume(with: Result { try self.invoke(body) })
                 }
@@ -66,7 +71,6 @@ final class Core: @unchecked Sendable {
         let data = Data(bytes: raw, count: strlen(raw))
         let env = try decoder.decode(Envelope<R>.self, from: data)
         if env.ok, let r = env.result { return r }
-        let e = env.error ?? BridgeError(code: "internal", message: "malformed envelope", details: nil)
-        throw CoreError(code: e.code, message: e.message, details: e.details)
+        throw env.error ?? CoreError(code: "internal", message: "malformed envelope")
     }
 }

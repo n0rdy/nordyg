@@ -1,4 +1,4 @@
-// Package presets implements the "presets" op (contract §7): the built-in
+// Package presets implements the "presets" op: the built-in
 // public resolvers so the shell never hardcodes addresses.
 package presets
 
@@ -140,15 +140,5 @@ var all = []Preset{
 				doq("AdGuard IPv6", "2a10:50c0::ad1:ff", "dns.adguard-dns.com"),
 			},
 		),
-	},
-	{
-		// Mullvad only serves encrypted DNS publicly; plain 53 works on their VPN only.
-		ID: "mullvad", Name: "Mullvad",
-		Endpoints: []contract.Endpoint{
-			dot("Mullvad", "194.242.2.2", "dns.mullvad.net"),
-			dot("Mullvad IPv6", "2a07:e340::2", "dns.mullvad.net"),
-			doh("Mullvad", "194.242.2.2", "https://dns.mullvad.net/dns-query"),
-			doh("Mullvad IPv6", "2a07:e340::2", "https://dns.mullvad.net/dns-query"),
-		},
 	},
 }

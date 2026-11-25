@@ -17,9 +17,8 @@ var bootstrapJSON []byte
 const BootstrapURL = "https://data.iana.org/rdap/dns.json"
 
 type bootstrapFile struct {
-	Version     string          `json:"version"`
-	Publication string          `json:"publication"`
-	Services    [][]interface{} `json:"services"`
+	Publication string  `json:"publication"`
+	Services    [][]any `json:"services"`
 }
 
 // Bootstrap maps TLDs to RDAP base URLs.
@@ -41,8 +40,8 @@ func ParseBootstrap(data []byte, source string) (*Bootstrap, error) {
 		if len(svc) != 2 {
 			continue
 		}
-		tlds, _ := svc[0].([]interface{})
-		urls, _ := svc[1].([]interface{})
+		tlds, _ := svc[0].([]any)
+		urls, _ := svc[1].([]any)
 		var list []string
 		for _, u := range urls {
 			if s, ok := u.(string); ok {

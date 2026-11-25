@@ -2,10 +2,14 @@ package dnssec
 
 import (
 	"bytes"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/miekg/dns"
+
+	"github.com/n0rdy/nordyg/core/internal/prose"
 )
 
 // proofKind is what a set of NSEC/NSEC3 records proves about a name.
@@ -19,9 +23,15 @@ const (
 	proofOptOut                    // name is inside an NSEC3 opt-out span
 )
 
+// maxNSEC3Iterations is where a proof stops being checked. RFC 9276 asks
+// zones for 0 and lets validators pick their own ceiling; 150 is the lowest
+// of the limits RFC 5155 set per key size.
+const maxNSEC3Iterations = 150
+
 type proof struct {
 	kind       proofKind
 	delegation bool // NoData at a delegation point (NS set, SOA clear)
+	nsec3      bool // proven by NSEC3 records, not NSEC
 	reason     string
 	signatures []Signature
 }
@@ -30,28 +40,8 @@ type proof struct {
 // accepting only records validly signed by keys of zone.
 func denial(m *dns.Msg, name string, qtype uint16, keys []*dns.DNSKEY, zone string, now time.Time) proof {
 	p := proof{kind: proofNone}
-	var nsecs []*dns.NSEC
-	var nsec3s []*dns.NSEC3
-	sawBad := false
-	for _, s := range rrsets(m.Ns) {
-		if s.typ != dns.TypeNSEC && s.typ != dns.TypeNSEC3 {
-			continue
-		}
-		sigs, ok := verifySet(s, keys, zone, now)
-		p.signatures = append(p.signatures, sigs...)
-		if !ok {
-			sawBad = true
-			continue
-		}
-		for _, rr := range s.rrs {
-			switch v := rr.(type) {
-			case *dns.NSEC:
-				nsecs = append(nsecs, v)
-			case *dns.NSEC3:
-				nsec3s = append(nsec3s, v)
-			}
-		}
-	}
+	nsecs, nsec3s, sigs, sawBad := denialSets(m, keys, zone, now)
+	p.signatures = sigs
 	name = dns.Fqdn(strings.ToLower(name))
 	if len(nsecs) > 0 {
 		return nsecProof(p, nsecs, name, qtype)
@@ -68,18 +58,78 @@ func denial(m *dns.Msg, name string, qtype uint16, keys []*dns.DNSKEY, zone stri
 	return p
 }
 
-// --- NSEC --------------------------------------------------------------------
+// denialSets collects the NSEC and NSEC3 records in m's authority section
+// that are validly signed by zone. bad is true when some were present but
+// failed verification.
+func denialSets(m *dns.Msg, keys []*dns.DNSKEY, zone string, now time.Time) (nsecs []*dns.NSEC, nsec3s []*dns.NSEC3, sigs []Signature, bad bool) {
+	for _, s := range rrsets(m.Ns) {
+		if s.typ != dns.TypeNSEC && s.typ != dns.TypeNSEC3 {
+			continue
+		}
+		ss, ok := verifySet(s, keys, zone, now)
+		sigs = append(sigs, ss...)
+		if !ok {
+			bad = true
+			continue
+		}
+		for _, rr := range s.rrs {
+			switch v := rr.(type) {
+			case *dns.NSEC:
+				nsecs = append(nsecs, v)
+			case *dns.NSEC3:
+				nsec3s = append(nsec3s, v)
+			}
+		}
+	}
+	return nsecs, nsec3s, sigs, bad
+}
+
+// wildcardProof checks that m's authority section proves name itself does
+// not exist, so expanding wild for it was legitimate (RFC 4035 §5.3.4,
+// RFC 5155 §8.8). Without that proof a signed wildcard answer could be
+// replayed for a name that has records of its own. It returns Secure, Bogus
+// (no proof), or Indeterminate (NSEC3 present but unusable).
+func wildcardProof(m *dns.Msg, name, wild string, keys []*dns.DNSKEY, zone string, now time.Time) (string, string, []Signature) {
+	nsecs, nsec3s, sigs, _ := denialSets(m, keys, zone, now)
+	name = dns.Fqdn(strings.ToLower(name))
+	ce := strings.TrimPrefix(strings.ToLower(wild), "*.")
+	if ce == "" {
+		ce = "."
+	}
+	for _, n := range nsecs {
+		if nsecCovers(n, name) && strings.EqualFold(closestEncloser(name, n), ce) {
+			return Secure, "", sigs
+		}
+	}
+	if len(nsec3s) > 0 {
+		for _, n := range nsec3s {
+			if n.Iterations > maxNSEC3Iterations {
+				return Indeterminate, "NSEC3 iterations " + strconv.Itoa(int(n.Iterations)) + " exceed the limit (RFC 9276), so the wildcard expansion for " + prose.Name(name) + " cannot be checked", sigs
+			}
+		}
+		// The closest encloser is implied by the RRSIG labels; only the next
+		// closer name needs a covering NSEC3.
+		labels := dns.SplitDomainName(name)
+		if k := dns.CountLabel(ce) + 1; k <= len(labels) {
+			nc := strings.Join(labels[len(labels)-k:], ".") + "."
+			if nsec3Cover(nsec3s, nc) != nil {
+				return Secure, "", sigs
+			}
+		}
+	}
+	return Bogus, prose.Name(name) + " was answered from the wildcard " + prose.Name(wild) + ", but the response does not prove that " + prose.Name(name) + " itself does not exist (RFC 4035 §5.3.4)", sigs
+}
 
 func nsecProof(p proof, nsecs []*dns.NSEC, name string, qtype uint16) proof {
 	for _, n := range nsecs {
 		if strings.EqualFold(n.Hdr.Name, name) {
-			if hasType(n.TypeBitMap, qtype) || hasType(n.TypeBitMap, dns.TypeCNAME) {
+			if slices.Contains(n.TypeBitMap, qtype) || slices.Contains(n.TypeBitMap, dns.TypeCNAME) {
 				p.kind = proofBogus
 				p.reason = "NSEC for " + name + " claims the type exists"
 				return p
 			}
 			p.kind = proofNoData
-			p.delegation = hasType(n.TypeBitMap, dns.TypeNS) && !hasType(n.TypeBitMap, dns.TypeSOA)
+			p.delegation = slices.Contains(n.TypeBitMap, dns.TypeNS) && !slices.Contains(n.TypeBitMap, dns.TypeSOA)
 			return p
 		}
 	}
@@ -92,6 +142,14 @@ func nsecProof(p proof, nsecs []*dns.NSEC, name string, qtype uint16) proof {
 	}
 	if covering == nil {
 		p.reason = "no NSEC matches or covers " + name
+		return p
+	}
+	// An empty non-terminal (a name with no records but with names below it,
+	// like 1.1.in-addr.arpa above a delegated 1.1.1.in-addr.arpa) has no NSEC
+	// of its own: the NSEC that covers it points at a name under it. The name
+	// exists and has no data (RFC 4035 §3.1.3.2, RFC 4592 §2.2.2).
+	if next := strings.ToLower(covering.NextDomain); dns.IsSubDomain(name, next) && !strings.EqualFold(next, name) {
+		p.kind = proofNoData
 		return p
 	}
 	ce := closestEncloser(name, covering)
@@ -171,32 +229,22 @@ func canonicalCompare(a, b string) int {
 	return 0
 }
 
-func hasType(bitmap []uint16, t uint16) bool {
-	for _, v := range bitmap {
-		if v == t {
-			return true
-		}
-	}
-	return false
-}
-
-// --- NSEC3 -------------------------------------------------------------------
-
 func nsec3Proof(p proof, nsec3s []*dns.NSEC3, name string, qtype uint16) proof {
+	p.nsec3 = true
 	for _, n := range nsec3s {
-		if n.Iterations > 150 {
-			p.reason = "NSEC3 iterations " + itoa(int(n.Iterations)) + " exceed the limit; treating as unusable (RFC 9276)"
+		if n.Iterations > maxNSEC3Iterations {
+			p.reason = "NSEC3 iterations " + strconv.Itoa(int(n.Iterations)) + " exceed the limit, so the proof is unusable (RFC 9276)"
 			return p
 		}
 	}
 	if n := nsec3Match(nsec3s, name); n != nil {
-		if hasType(n.TypeBitMap, qtype) || hasType(n.TypeBitMap, dns.TypeCNAME) {
+		if slices.Contains(n.TypeBitMap, qtype) || slices.Contains(n.TypeBitMap, dns.TypeCNAME) {
 			p.kind = proofBogus
 			p.reason = "NSEC3 for " + name + " claims the type exists"
 			return p
 		}
 		p.kind = proofNoData
-		p.delegation = hasType(n.TypeBitMap, dns.TypeNS) && !hasType(n.TypeBitMap, dns.TypeSOA)
+		p.delegation = slices.Contains(n.TypeBitMap, dns.TypeNS) && !slices.Contains(n.TypeBitMap, dns.TypeSOA)
 		return p
 	}
 	// Closest encloser proof: walk up until an NSEC3 matches an ancestor.

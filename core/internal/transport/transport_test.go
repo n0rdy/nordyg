@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -30,17 +31,6 @@ func query(name string, t uint16) *dns.Msg {
 
 func opts(ms int) contract.Effective {
 	return contract.Options{TimeoutMS: ms}.Resolve()
-}
-
-func code(err error) string {
-	var e *bridge.Error
-	if errors.As(err, &e) {
-		return e.Code
-	}
-	if err == nil {
-		return ""
-	}
-	return "<" + err.Error() + ">"
 }
 
 func port(t *testing.T, addr string) string {
@@ -84,6 +74,28 @@ func TestUDPAndTCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertAnswer(t, res, "tcp")
+}
+
+func TestOversizedUDPAnswerIsRead(t *testing.T) {
+	// A resolver that ignores the advertised EDNS size (1232) and sends a
+	// ~3 KB datagram anyway, as some VPN and router resolvers do.
+	big := func(q *dns.Msg) *dns.Msg {
+		m := new(dns.Msg)
+		m.SetReply(q)
+		for i := 0; i < 12; i++ {
+			rr, _ := dns.NewRR(fmt.Sprintf("example.test. 300 IN TXT \"%s\"", strings.Repeat(string(rune('a'+i)), 240)))
+			m.Answer = append(m.Answer, rr)
+		}
+		return m
+	}
+	udp := testdns.UDP(t, big)
+	res, err := (&Client{}).Exchange(context.Background(), contract.Endpoint{Transport: "udp", Address: udp}, query("example.test", dns.TypeTXT), opts(2000), nil)
+	if err != nil {
+		t.Fatalf("oversized datagram: %v", err)
+	}
+	if len(res.Msg.Answer) != 12 || res.Size <= 1232 || res.Exchange.Protocol != "udp" {
+		t.Fatalf("answers %d, size %d, protocol %s", len(res.Msg.Answer), res.Size, res.Exchange.Protocol)
+	}
 }
 
 func TestTruncationFallsBackToTCP(t *testing.T) {
@@ -147,12 +159,12 @@ func TestDoT(t *testing.T) {
 
 	// Wrong name must be a tls error, not network.
 	_, err = c.Exchange(context.Background(), contract.Endpoint{Transport: "dot", Address: addr, TLSName: "wrong.test"}, query("example.test", dns.TypeA), opts(3000), nil)
-	if code(err) != contract.CodeTLS {
+	if testdns.Code(err) != contract.CodeTLS {
 		t.Fatalf("want tls error, got %v", err)
 	}
 	// Untrusted CA too.
 	_, err = (&Client{}).Exchange(context.Background(), contract.Endpoint{Transport: "dot", Address: addr, TLSName: "dns.test"}, query("example.test", dns.TypeA), opts(3000), nil)
-	if code(err) != contract.CodeTLS {
+	if testdns.Code(err) != contract.CodeTLS {
 		t.Fatalf("want tls error, got %v", err)
 	}
 }
@@ -188,7 +200,7 @@ func TestDoHBootstrap(t *testing.T) {
 	ep := contract.Endpoint{Transport: "doh", URL: url}
 
 	_, err := c.Exchange(context.Background(), ep, query("example.test", dns.TypeA), opts(3000), nil)
-	if code(err) != contract.CodeBootstrapRequired {
+	if testdns.Code(err) != contract.CodeBootstrapRequired {
 		t.Fatalf("want bootstrap_required, got %v", err)
 	}
 
@@ -201,7 +213,7 @@ func TestDoHBootstrap(t *testing.T) {
 	// Bootstrap that cannot resolve the host.
 	empty := testdns.UDP(t, testdns.Zone(t))
 	_, err = c.Exchange(context.Background(), ep, query("example.test", dns.TypeA), opts(3000), []contract.Endpoint{{Transport: "udp", Address: empty}})
-	if code(err) != contract.CodeBootstrapFailed {
+	if testdns.Code(err) != contract.CodeBootstrapFailed {
 		t.Fatalf("want bootstrap_failed, got %v", err)
 	}
 }
@@ -220,7 +232,7 @@ func TestDoHErrors(t *testing.T) {
 	// Name mismatch → tls.
 	url = "https://other.test:" + port(t, addr) + "/dns-query"
 	_, err = c.Exchange(context.Background(), contract.Endpoint{Transport: "doh", URL: url, Address: addr}, query("example.test", dns.TypeA), opts(3000), nil)
-	if code(err) != contract.CodeTLS {
+	if testdns.Code(err) != contract.CodeTLS {
 		t.Fatalf("want tls, got %v", err)
 	}
 }
@@ -242,7 +254,7 @@ func TestDoQ(t *testing.T) {
 	}
 
 	_, err = c.Exchange(context.Background(), contract.Endpoint{Transport: "doq", Address: addr, TLSName: "wrong.test"}, query("example.test", dns.TypeA), opts(3000), nil)
-	if code(err) != contract.CodeTLS {
+	if testdns.Code(err) != contract.CodeTLS {
 		t.Fatalf("want tls, got %v", err)
 	}
 }
@@ -251,7 +263,7 @@ func TestTimeoutAndCancel(t *testing.T) {
 	addr := testdns.UDP(t, testdns.Silent)
 	c := &Client{}
 	_, err := c.Exchange(context.Background(), contract.Endpoint{Transport: "udp", Address: addr}, query("example.test", dns.TypeA), opts(150), nil)
-	if code(err) != contract.CodeTimeout {
+	if testdns.Code(err) != contract.CodeTimeout {
 		t.Fatalf("want timeout, got %v", err)
 	}
 
@@ -269,6 +281,21 @@ func TestTimeoutAndCancel(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("tcp: want context.Canceled, got %v", err)
 	}
+
+	// The server keeps the stream open without answering, so only the cancel
+	// can end the read before the 5 s timeout.
+	hold := make(chan struct{})
+	t.Cleanup(func() { close(hold) })
+	cert := testdns.NewCert(t, "dns.test")
+	doq := testdns.DoQ(t, cert, func(*dns.Msg) *dns.Msg { <-hold; return nil })
+	c = &Client{RootCAs: cert.Pool}
+	ctx, cancel = context.WithCancel(context.Background())
+	go func() { time.Sleep(200 * time.Millisecond); cancel() }()
+	start := time.Now()
+	_, err = c.Exchange(ctx, contract.Endpoint{Transport: "doq", Address: doq, TLSName: "dns.test"}, query("example.test", dns.TypeA), opts(5000), nil)
+	if !errors.Is(err, context.Canceled) || time.Since(start) > 2*time.Second {
+		t.Fatalf("doq: want context.Canceled soon after the cancel, got %v after %s", err, time.Since(start))
+	}
 }
 
 func TestConnectionRefusedIsNetwork(t *testing.T) {
@@ -276,14 +303,14 @@ func TestConnectionRefusedIsNetwork(t *testing.T) {
 	addr := l.Addr().String()
 	_ = l.Close()
 	_, err := (&Client{}).Exchange(context.Background(), contract.Endpoint{Transport: "tcp", Address: addr}, query("example.test", dns.TypeA), opts(1000), nil)
-	if code(err) != contract.CodeNetwork {
+	if testdns.Code(err) != contract.CodeNetwork {
 		t.Fatalf("want network, got %v", err)
 	}
 }
 
 func TestInvalidEndpointRejected(t *testing.T) {
 	_, err := (&Client{}).Exchange(context.Background(), contract.Endpoint{Transport: "dot", Address: "1.1.1.1:853"}, query("x", dns.TypeA), opts(1000), nil)
-	if code(err) != contract.CodeBadEndpoint {
+	if testdns.Code(err) != contract.CodeBadEndpoint {
 		t.Fatalf("want bad_endpoint, got %v", err)
 	}
 }
