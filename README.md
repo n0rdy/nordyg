@@ -58,7 +58,7 @@ gh attestation verify Nordyg-0.0.1.dmg --repo n0rdy/nordyg
 
 ### From source
 
-Requires Xcode and Go. The Go version is pinned in the Makefile; any Go on PATH that can download toolchains will do.
+Requires Xcode and Go. The Go version is pinned in the Makefile. Any Go on PATH that can download toolchains will do.
 
 ```sh
 make test      # Go tests, no network needed
@@ -72,9 +72,9 @@ Or open `app/Nordyg.xcodeproj` in Xcode after `make archive`.
 ## Layout
 
 - `core/` Go module with all DNS logic, compiled to a universal static C archive. The C surface is three functions
-  (`NordygQuery`, `NordygCancel`, `NordygFree`); everything else is a JSON contract.
-- `app/` SwiftUI shell. `app/NordygCore` is the Clang module that imports the archive; `app/smoke` is a Swift harness
-  that exercises the bridge in CI.
+  (`NordygQuery`, `NordygCancel`, `NordygFree`) - everything else is a JSON contract.
+- `app/` SwiftUI shell. `app/NordygCore` is the Clang module that imports the archive.
+- `app/smoke` is a Swift harness that exercises the bridge in CI.
 - `landing/` the website, nordyg.com.
 
 ## License
