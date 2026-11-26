@@ -17,24 +17,6 @@
 
 No account and no telemetry. The [privacy page](https://nordyg.com/privacy/) lists every server the app talks to.
 
-## Open-source but closed-contribution
-
-Nordyg is open-source, but I do not accept external contributions. This is a personal project, and I want to keep full
-control over the codebase and direction of the project. Also, I don't feel I have enough free time to review and manage
-contributions (if any).
-
-Therefore, please do not open PRs.
-
-If you find any bugs - please, use the `Issues` section.
-If you have questions or suggestions, use the `Discussions` section for that.
-
-Transparency on what to expect:
-
-- Built for my own use first. The roadmap follows what I need. Ideas are welcome in Discussions, but I may say no.
-- Close to feature-complete for my needs. From here, expect bug fixes and dependency updates rather than a growing feature list.
-- Still 0.x: things can change between versions.
-- Help is best effort, in my spare time.
-
 ## Install
 
 Download `Nordyg-<version>.dmg` from [Releases](https://github.com/n0rdy/nordyg/releases/latest), open it and drag
@@ -72,9 +54,28 @@ Or open `app/Nordyg.xcodeproj` in Xcode after `make archive`.
 ## Layout
 
 - `core/` Go module with all DNS logic, compiled to a universal static C archive. The C surface is three functions (`NordygQuery`, `NordygCancel`, `NordygFree`) - everything else is a JSON contract.
-- `app/` SwiftUI shell. `app/NordygCore` is the Clang module that imports the archive.
+- `app/` SwiftUI shell. 
+- ]`app/NordygCore` is the Clang module that imports the archive.
 - `app/smoke` is a Swift harness that exercises the bridge in CI.
 - `landing/` the website, nordyg.com.
+
+## Open-source but closed-contribution
+
+Nordyg is open-source, but I do not accept external contributions. This is a personal project, and I want to keep full
+control over the codebase and direction of the project. Also, I don't feel I have enough free time to review and manage
+contributions (if any).
+
+Therefore, please do not open PRs:
+
+- If you find any bugs - please, use the `Issues` section.
+- If you have questions or suggestions, use the `Discussions` section for that.
+
+Transparency on what to expect:
+
+- Built for my own use first. The roadmap follows what I need. Ideas are welcome in Discussions, but I may say no.
+- Close to feature-complete for my needs. From here, expect bug fixes and dependency updates rather than a growing feature list.
+- Still 0.x: things can change between versions.
+- Help is best effort, in my spare time.
 
 ## License
 
